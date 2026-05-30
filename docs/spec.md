@@ -242,18 +242,28 @@ export async function restoreFromS3(params: SyncParams): Promise<number> {
 
 ## Open Questions
 
-1. **Exact `openclaw.json` `channels.telegram` schema** for the pinned OpenClaw
-   version — needs verification against the installed package (the serverless
-   side only ever *deleted* this key, so we lack a positive example). Resolve in
-   the `config.ts` task by inspecting `node_modules/openclaw` / onboard output.
-2. **Allowed-chat-id / auth** for the Telegram channel — does OpenClaw native
-   Telegram support an allowlist, or do we rely on bot privacy + a known chat?
-3. **OpenClaw version pin** — match the serverless `OPENCLAW_VERSION`
-   (2026.4.26) or take latest? Default: match serverless for session-format
-   compatibility.
+1. ~~**Exact `openclaw.json` `channels.telegram` schema**~~ **RESOLVED**
+   (verified against `node_modules/openclaw@2026.4.26` `docs/channels/telegram.md`):
+   ```json5
+   channels: { telegram: {
+     enabled: true,
+     botToken: "...",            // OR env fallback TELEGRAM_BOT_TOKEN (default account)
+     dmPolicy: "pairing" | "allowlist" | "open" | "disabled",
+     allowFrom: ["123456789"],   // numeric Telegram user IDs (allowlist mode)
+     groups: { "*": { requireMention: true } },
+   }}
+   ```
+   We deliver the token via env (`TELEGRAM_BOT_TOKEN`) and do **not** write it
+   into `openclaw.json` (security rule). Start with `openclaw gateway run`.
+2. ~~**Allowed-chat-id / auth**~~ **RESOLVED** — native allowlist supported via
+   `dmPolicy: "allowlist"` + `allowFrom` (numeric IDs). `allowlist` with empty
+   `allowFrom` is rejected by OpenClaw config validation, so `config.ts` enforces
+   the same. One-owner default recommendation: `allowlist` + explicit IDs.
+3. **OpenClaw version pin** — **DECIDED**: match serverless `2026.4.26` for
+   session-format compatibility.
 4. **Concurrent writers** — if the serverless Fargate container and this host run
    for the same `userId` at once, both back up to the same prefix (last-writer-
-   wins). v1 assumes they don't overlap; document it. Worth a guard later?
+   wins). **DECIDED for v1**: assume no overlap; documented here. Guard deferred.
 
 ---
 
