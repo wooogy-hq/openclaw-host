@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+*.log
+
+# Local OpenClaw runtime state (never commit)
+.openclaw/
+data/
+*.identity.json
