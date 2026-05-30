@@ -9,10 +9,11 @@ workspace + session state to the **same S3 bucket** used by a
 deployment — so state is shared across the machine and the serverless web/Telegram
 paths.
 
-> Status: early scaffold. Design in [`docs/spec.md`](docs/spec.md). Implementation
-> is gated on spec review.
+> Status: core runtime implemented (config, S3 sync, gateway supervisor,
+> lifecycle) with 41 passing tests. Design in [`docs/spec.md`](docs/spec.md).
+> Pending: live smoke test on a real machine with a Telegram bot token.
 
-## Quick start (target)
+## Quick start (local)
 
 ```bash
 git clone git@github.com:SeungWookHan/openclaw-host.git
@@ -20,13 +21,35 @@ cd openclaw-host
 cp .env.example .env   # set DATA_BUCKET, USER_ID, AWS_REGION, TELEGRAM_BOT_TOKEN, AI_PROVIDER...
 npm install
 npm run build
-npm start
+npm start              # restore from S3 -> write openclaw.json -> run `openclaw gateway run`
 ```
+
+Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.4.26`), or point
+`OPENCLAW_BIN` at a specific binary.
+
+## Run as a service ("like an OS")
+
+```bash
+docker build -t openclaw-host .
+docker run --env-file .env -v openclaw-data:/data openclaw-host
+```
+
+or via systemd — see [`deploy/openclaw-host.service`](deploy/openclaw-host.service)
+for the install steps.
+
+## Configuration
+
+All config is via environment variables — see [`.env.example`](.env.example).
+Secrets (bot token, AI API key) are delivered via env only and are **never**
+written into `openclaw.json`.
 
 ## What it is / isn't
 
-- **Is:** OpenClaw process supervisor + S3 workspace/session sync. Native channels.
+- **Is:** OpenClaw process supervisor + S3 workspace/session sync. Native channels
+  (Telegram in v1) — OpenClaw talks to chat platforms directly.
 - **Isn't:** a serverless stack. No API Gateway, Lambda, DynamoDB, or Bridge.
 
-See [`docs/spec.md`](docs/spec.md) for architecture, the S3 layout contract, and
-boundaries.
+State is shared with a `serverless-openclaw` deployment through the same S3
+bucket: `workspaces/{userId}/...` and `sessions/{userId}/agents/default/sessions/...`.
+See [`docs/spec.md`](docs/spec.md) for the full architecture, S3 layout contract,
+and boundaries.

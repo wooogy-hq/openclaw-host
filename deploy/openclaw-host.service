@@ -1,0 +1,29 @@
+# systemd unit — install OpenClaw as an always-on machine service ("like an OS").
+#
+#   1. Build:   npm ci && npm run build   (in /opt/openclaw-host)
+#   2. Install: sudo cp deploy/openclaw-host.service /etc/systemd/system/
+#   3. Config:  sudo cp .env.example /etc/openclaw-host.env  &&  sudo $EDITOR /etc/openclaw-host.env
+#   4. Enable:  sudo systemctl daemon-reload && sudo systemctl enable --now openclaw-host
+#
+# Requires `openclaw` on PATH (npm i -g openclaw@2026.4.26) and AWS credentials
+# available to the service user (env file, instance role, or ~/.aws).
+
+[Unit]
+Description=openclaw-host — OpenClaw runtime with S3 state sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User/WorkingDirectory to your install location.
+User=oc
+WorkingDirectory=/opt/openclaw-host
+EnvironmentFile=/etc/openclaw-host.env
+ExecStart=/usr/bin/node dist/index.js
+# index.ts runs a final S3 backup on SIGTERM before exiting; give it room.
+TimeoutStopSec=60
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
