@@ -25,7 +25,9 @@ export interface HostConfig {
   userId: string;
   awsRegion?: string;
   workspaceDir: string;
-  openclawHome: string;
+  /** OpenClaw state dir — config lives at {stateDir}/openclaw.json, sessions under
+   *  {stateDir}/agents/default/sessions. Passed to the gateway as OPENCLAW_STATE_DIR. */
+  stateDir: string;
   gatewayPort: number;
   backupIntervalMs: number;
   telegram: TelegramConfig;
@@ -70,7 +72,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     userId,
     awsRegion,
     workspaceDir: env.WORKSPACE_DIR ?? "./data/workspace",
-    openclawHome: env.OPENCLAW_HOME ?? "./.openclaw",
+    stateDir: env.OPENCLAW_STATE_DIR ?? "./.openclaw",
     gatewayPort: env.OPENCLAW_GATEWAY_PORT ? Number(env.OPENCLAW_GATEWAY_PORT) : GATEWAY_PORT,
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
     telegram: { enabled: true, dmPolicy, allowFrom },

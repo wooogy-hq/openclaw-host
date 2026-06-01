@@ -23,9 +23,13 @@ function writeConfigFile(filePath: string, config: Record<string, unknown>): voi
 
 async function main(): Promise<void> {
   const config = loadConfig();
+
+  // Point the OpenClaw gateway at our state dir (absolute) so it reads the
+  // openclaw.json we write and stores sessions where we back them up.
+  const stateDir = path.resolve(config.stateDir);
   const supervisor = new GatewaySupervisor({
     port: config.gatewayPort,
-    env: process.env,
+    env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },
     command: process.env.OPENCLAW_BIN, // defaults to "openclaw" on PATH
   });
 

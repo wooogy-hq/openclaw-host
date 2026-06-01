@@ -19,6 +19,11 @@ describe("loadConfig", () => {
     expect(cfg.provider.provider).toBe("anthropic");
   });
 
+  it("reads the OpenClaw state dir (OPENCLAW_STATE_DIR) with a default", () => {
+    expect(loadConfig({ ...base }).stateDir).toBe("./.openclaw");
+    expect(loadConfig({ ...base, OPENCLAW_STATE_DIR: "/data/oc" }).stateDir).toBe("/data/oc");
+  });
+
   it("throws when DATA_BUCKET is missing", () => {
     expect(() => loadConfig({ USER_ID: "u1", TELEGRAM_BOT_TOKEN: "t" })).toThrow(/DATA_BUCKET/);
   });

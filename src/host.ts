@@ -24,7 +24,7 @@ export interface HostDeps {
 
 /** Local path where OpenClaw stores session transcripts. */
 function sessionsLocalPath(cfg: HostConfig): string {
-  return path.join(cfg.openclawHome, "agents", "default", "sessions");
+  return path.join(cfg.stateDir, "agents", "default", "sessions");
 }
 
 /** The two (prefix, localPath) pairs that make up shared state. */
@@ -52,7 +52,7 @@ export async function startup(deps: HostDeps): Promise<void> {
     });
   }
 
-  writeConfigFile(path.join(config.openclawHome, "openclaw.json"), buildOpenclawConfig(config));
+  writeConfigFile(path.join(config.stateDir, "openclaw.json"), buildOpenclawConfig(config));
 
   supervisor.start();
 }

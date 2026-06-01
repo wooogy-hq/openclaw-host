@@ -8,7 +8,7 @@ function makeDeps(overrides: Partial<HostDeps> = {}): HostDeps {
     USER_ID: "u1",
     TELEGRAM_BOT_TOKEN: "t",
     WORKSPACE_DIR: "/data/ws",
-    OPENCLAW_HOME: "/home/oc",
+    OPENCLAW_STATE_DIR: "/home/oc",
   });
   return {
     config,
