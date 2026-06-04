@@ -14,7 +14,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # OpenClaw CLI on PATH (pinned to match the serverless deployment's session format).
-ARG OPENCLAW_VERSION=2026.4.26
+ARG OPENCLAW_VERSION=2026.6.1
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
 # Coding CLIs — OpenClaw delegates coding to a backend-agnostic `code-agent`

@@ -93,6 +93,13 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     enabled: cfg.telegram.enabled,
     dmPolicy: cfg.telegram.dmPolicy,
     groups: { "*": { requireMention: true } },
+    // Disable live preview streaming. Default ("partial") streams partial
+    // replies, but in this container the editMessageText path doesn't engage —
+    // every partial/tool-progress update is sent as a NEW Telegram message, so
+    // the answer appears to repeat itself. "off" sends one final message/turn.
+    // NOTE: openclaw 2026.4.x accepts the STRING form ("off"); the object form
+    // ({mode:"off"}) is silently dropped by config normalization.
+    streaming: "off",
   };
   if (cfg.telegram.dmPolicy === "allowlist") {
     telegram.allowFrom = cfg.telegram.allowFrom;
