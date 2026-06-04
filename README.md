@@ -61,6 +61,68 @@ All config is via environment variables — see [`.env.example`](.env.example).
 Secrets (bot token, AI API key) are delivered via env only and are **never**
 written into `openclaw.json`.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    User([User]) -->|message| TG[Telegram]
+    TG -->|webhook / polling| OC[OpenClaw\nDeepSeek v4 Pro]
+
+    OC -->|coding task| CA[code-agent\nClaude Code --print]
+    OC -->|knowledge query| KBQ[kb-query skill]
+
+    KBQ -->|shell exec| KB[kb CLI\n~/.local/bin/kb]
+    KB -->|LLM inference| DS[DeepSeek API]
+    KB <-->|read concepts| KBV[(kb-vault\nwooogy-hq/kb-vault\n56 concepts)]
+
+    CA -->|code + diffs| OC
+    DS -->|answer| KB
+    KB -->|answer| KBQ
+    KBQ -->|context| OC
+
+    OC -->|reply| TG
+    TG -->|reply| User
+
+    WS[Workspace docs\n*.md, specs, ADRs] -->|kb compile| KB
+    KB -->|kb push| KBV
+```
+
+## Knowledge Base Integration
+
+The agent uses [`kb`](https://github.com/wooogy-hq/kb-vault) — a local CLI
+knowledge-base tool — to answer questions from a curated vault of 56 concepts
+maintained in [`wooogy-hq/kb-vault`](https://github.com/wooogy-hq/kb-vault).
+
+**Components**
+
+| Component | Role |
+|---|---|
+| `kb` binary (`~/.local/bin/kb`) | CLI that reads the vault and queries DeepSeek for LLM-assisted lookups |
+| `kb-vault` (GitHub) | Version-controlled set of Markdown concept files; the source of truth |
+| `kb-query` OpenClaw skill | Exposes `kb` to the running agent so it can call it mid-conversation |
+| DeepSeek API | LLM backend used by `kb` for semantic search and synthesis |
+
+**How it works**
+
+1. The agent receives a question that needs domain context (architecture decisions,
+   project conventions, known patterns).
+2. It calls the `kb-query` skill, which shells out to `kb query <question>`.
+3. `kb` looks up relevant concepts from the local clone of `kb-vault` and, if
+   needed, sends them plus the question to DeepSeek to synthesize an answer.
+4. The answer is returned to the agent as context before it composes its reply.
+
+**Keeping the vault up to date**
+
+Workspace documentation (specs, ADRs, how-tos) is compiled into the vault:
+
+```bash
+kb compile docs/          # parse workspace Markdown into concept files
+kb push                   # push updated concepts to wooogy-hq/kb-vault on GitHub
+```
+
+This keeps the agent's knowledge current with the project without bloating the
+system prompt.
+
 ## What it is / isn't
 
 - **Is:** OpenClaw process supervisor + S3 workspace/session sync. Native channels
