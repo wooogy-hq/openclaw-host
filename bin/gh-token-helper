@@ -1,0 +1,6 @@
+#!/bin/sh
+# Git credential helper — supplies GITHUB_TOKEN for HTTPS GitHub operations.
+# The token is a fine-grained PAT scoped to the wooogy-hq org, delivered via the
+# GITHUB_TOKEN env var (never written to disk). git calls this with "get".
+[ "$1" = "get" ] || exit 0
+printf 'username=x-access-token\npassword=%s\n' "${GITHUB_TOKEN:-}"

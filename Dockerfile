@@ -17,6 +17,15 @@ RUN apt-get update && \
 ARG OPENCLAW_VERSION=2026.4.26
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
+# Coding CLIs — OpenClaw delegates coding to a backend-agnostic `code-agent`
+# wrapper (see bin/code-agent), selected at runtime via CODING_AGENT.
+#   claude (default): @anthropic-ai/claude-code  (CLAUDE_CODE_OAUTH_TOKEN | ANTHROPIC_API_KEY)
+#   codex           : @openai/codex              (OPENAI_API_KEY / codex login)
+# Both are installed so swapping backends is purely a CODING_AGENT env change.
+RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --force
+COPY bin/code-agent /usr/local/bin/code-agent
+RUN chmod +x /usr/local/bin/code-agent
+
 # Non-root user.
 RUN groupadd -r oc && useradd -r -g oc -m oc
 

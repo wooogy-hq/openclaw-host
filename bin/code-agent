@@ -1,0 +1,34 @@
+#!/bin/sh
+# code-agent — backend-agnostic coding delegate.
+#
+# OpenClaw (the chat/orchestration agent) calls this to delegate actual coding
+# to a dedicated coding CLI. Swap backends with one env var — no other change:
+#
+#   CODING_AGENT=claude   (default) -> Claude Code   (auth: CLAUDE_CODE_OAUTH_TOKEN | ANTHROPIC_API_KEY)
+#   CODING_AGENT=codex              -> OpenAI Codex   (auth: OPENAI_API_KEY / codex login)
+#
+# Prompt is taken from args ("$@") or, if none, from stdin.
+set -eu
+
+AGENT="${CODING_AGENT:-claude}"
+
+if [ "$#" -gt 0 ]; then
+  PROMPT="$*"
+else
+  PROMPT="$(cat)"
+fi
+
+case "$AGENT" in
+  claude)
+    # Headless, autonomous edits inside the (sandboxed) container workspace.
+    exec claude -p "$PROMPT" --dangerously-skip-permissions
+    ;;
+  codex)
+    # Non-interactive Codex run. Flags may need tuning when first enabled.
+    exec codex exec "$PROMPT"
+    ;;
+  *)
+    echo "code-agent: unknown CODING_AGENT='$AGENT' (expected: claude|codex)" >&2
+    exit 2
+    ;;
+esac
