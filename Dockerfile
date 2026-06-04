@@ -40,6 +40,13 @@ COPY --from=builder /build/dist/ ./dist/
 ENV WORKSPACE_DIR=/data/workspace \
     OPENCLAW_STATE_DIR=/state
 RUN mkdir -p /data/workspace /state && chown -R oc:oc /data /state /home/oc
+
+# Git auth that survives OpenClaw's sandboxed tool subprocesses (env- AND
+# HOME-independent): system-level /etc/gitconfig + an absolute credentials file
+# written to /state at runtime (the fine-grained PAT, wooogy-hq scoped).
+RUN git config --system credential.helper "store --file=/state/.git-credentials" && \
+    git config --system url."https://github.com/".insteadOf "git@github.com:"
+
 USER oc
 
 # Required at runtime (no defaults): DATA_BUCKET, USER_ID, TELEGRAM_BOT_TOKEN,
