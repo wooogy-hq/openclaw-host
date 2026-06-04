@@ -26,6 +26,16 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --
 COPY bin/code-agent /usr/local/bin/code-agent
 RUN chmod +x /usr/local/bin/code-agent
 
+# GitOps validation tools — so the agent can self-validate manifests BEFORE
+# committing to wooogy-hq/infra (helm lint + kubeconform schema + conftest
+# policy). Client-side only; no cluster access needed.
+RUN set -eux; \
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; \
+    curl -fsSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+      | tar xz -C /usr/local/bin kubeconform; \
+    curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz \
+      | tar xz -C /usr/local/bin conftest
+
 # Non-root user.
 RUN groupadd -r oc && useradd -r -g oc -m oc
 
