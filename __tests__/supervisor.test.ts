@@ -22,7 +22,7 @@ describe("GatewaySupervisor", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     const [cmd, args, opts] = (spawn as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(cmd).toBe("openclaw");
-    expect(args).toEqual(["gateway", "run", "--port", "18789"]);
+    expect(args).toEqual(["gateway", "run", "--port", "18789", "--bind", "loopback"]);
     expect((opts as { env: Record<string, string> }).env.FOO).toBe("bar");
     expect(child.listenerCount("exit")).toBeGreaterThan(0);
   });

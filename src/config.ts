@@ -97,9 +97,10 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     // replies, but in this container the editMessageText path doesn't engage —
     // every partial/tool-progress update is sent as a NEW Telegram message, so
     // the answer appears to repeat itself. "off" sends one final message/turn.
-    // NOTE: openclaw 2026.4.x accepts the STRING form ("off"); the object form
-    // ({mode:"off"}) is silently dropped by config normalization.
-    streaming: "off",
+    // NOTE: openclaw 2026.6.x REQUIRES the object form ({mode:"off"}) and
+    // rejects the string "off" ("must be object"). (2026.4.x was the opposite —
+    // it stripped the object; we run 2026.6.1, so object form it is.)
+    streaming: { mode: "off" },
   };
   if (cfg.telegram.dmPolicy === "allowlist") {
     telegram.allowFrom = cfg.telegram.allowFrom;

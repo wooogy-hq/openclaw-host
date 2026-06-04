@@ -37,7 +37,11 @@ export class GatewaySupervisor {
     if (this.child) throw new Error("GatewaySupervisor already started");
     this.child = this.spawnFn(
       this.opts.command ?? "openclaw",
-      ["gateway", "run", "--port", String(this.opts.port)],
+      // --bind loopback: don't expose the gateway on 0.0.0.0. openclaw 2026.6.x
+      // refuses to start with the container-default bind=auto unless auth (token/
+      // password) is set; we don't expose the gateway (native channels are
+      // outbound), so loopback is correct and needs no token.
+      ["gateway", "run", "--port", String(this.opts.port), "--bind", "loopback"],
       { env: this.opts.env ?? process.env, stdio: "inherit" },
     );
     this.child.on("exit", (code) => {

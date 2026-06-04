@@ -61,8 +61,8 @@ describe("buildOpenclawConfig", () => {
     expect(tg.dmPolicy).toBe("pairing");
     expect(tg.groups).toEqual({ "*": { requireMention: true } });
     // Streaming off → one final message per turn (avoids repeated-message bug).
-    // String form — openclaw 2026.4.x drops the object {mode} form.
-    expect(tg.streaming).toBe("off");
+    // Object form — openclaw 2026.6.x requires {mode} and rejects the string.
+    expect(tg.streaming).toEqual({ mode: "off" });
     // Security: the secret must never land in openclaw.json.
     expect(tg.botToken).toBeUndefined();
     expect(JSON.stringify(json)).not.toContain("123:abc");
