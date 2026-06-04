@@ -29,13 +29,31 @@ Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.4.26`), or point
 
 ## Run as a service ("like an OS")
 
+Recommended: docker compose, so the agent owns a host directory of files/projects
+(files scope — full control inside the container, host reach limited to the
+mounted workspace; no host services/packages/docker):
+
 ```bash
-docker build -t openclaw-host .
-docker run --env-file .env -v openclaw-data:/data openclaw-host
+HOST_WORKSPACE=/srv/openclaw docker compose up -d --build
+docker compose logs -f
 ```
 
-or via systemd — see [`deploy/openclaw-host.service`](deploy/openclaw-host.service)
-for the install steps.
+See [`docker-compose.yml`](docker-compose.yml) for the mounts and AWS-credential
+options. Or run the image directly:
+
+```bash
+docker build -t openclaw-host .
+docker run -d --restart unless-stopped --env-file .env \
+  -v /srv/openclaw:/data/workspace -v openclaw-state:/state openclaw-host
+```
+
+or via systemd — see [`deploy/openclaw-host.service`](deploy/openclaw-host.service).
+
+**Scope note:** the agent runs commands *inside the container*. Mounting a host
+dir lets it manage those files, but not host services/packages. To let it
+administer the host itself, you'd add host access (privileged / `--pid=host` /
+docker socket) — deliberately, since that makes the container effectively root
+on the box.
 
 ## Configuration
 

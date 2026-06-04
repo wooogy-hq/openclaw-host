@@ -26,9 +26,11 @@ RUN npm pkg delete scripts.prepare && npm ci --omit=dev && npm cache clean --for
 COPY --from=builder /build/dist/ ./dist/
 
 # Default writable locations (override via env). Bind-mount or volume for persistence.
+# OPENCLAW_STATE_DIR is OpenClaw's own var: it reads {dir}/openclaw.json and stores
+# sessions under {dir}/agents/<id>/sessions. index.ts also injects it into the gateway.
 ENV WORKSPACE_DIR=/data/workspace \
-    OPENCLAW_HOME=/home/oc/.openclaw
-RUN mkdir -p /data/workspace && chown -R oc:oc /data /home/oc
+    OPENCLAW_STATE_DIR=/state
+RUN mkdir -p /data/workspace /state && chown -R oc:oc /data /state /home/oc
 USER oc
 
 # Required at runtime (no defaults): DATA_BUCKET, USER_ID, TELEGRAM_BOT_TOKEN,

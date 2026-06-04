@@ -1,0 +1,35 @@
+# Always-on "agent owns this server's files" deployment (files/projects scope).
+#
+# The agent has full control INSIDE the container only. Its reach on the host is
+# exactly the workspace directory you bind-mount below — nothing else (no host
+# services, packages, or docker). S3 stays the source of truth; the bind mount
+# just persists the workspace on the host and lets you see/edit it directly.
+#
+#   1. cp .env.example .env   # fill DATA_BUCKET, USER_ID, TELEGRAM_BOT_TOKEN, AI key
+#   2. HOST_WORKSPACE=/srv/openclaw docker compose up -d --build
+#   3. docker compose logs -f
+#
+services:
+  openclaw-host:
+    build: .
+    # image: openclaw-host:latest   # or use a prebuilt image instead of build
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WORKSPACE_DIR: /data/workspace
+      OPENCLAW_STATE_DIR: /state
+      OPENCLAW_DISABLE_BONJOUR: "1" # no mDNS noise on a server
+    volumes:
+      # The agent's project files, visible/editable on the host. Also synced to S3.
+      # Override the host path with HOST_WORKSPACE (defaults to ./workspace).
+      - ${HOST_WORKSPACE:-./workspace}:/data/workspace
+      # Persist OpenClaw state (sessions/config/cron) across restarts.
+      - openclaw-state:/state
+      # AWS credentials — pick ONE:
+      #   (a) mount your profile read-only (uncomment), or
+      #   (b) set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env, or
+      #   (c) use an instance role if this server is an EC2/ECS host.
+      # - ${HOME}/.aws:/home/oc/.aws:ro
+
+volumes:
+  openclaw-state:
