@@ -29,25 +29,30 @@ Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.4.26`), or point
 
 ## Run as a service ("like an OS")
 
-Recommended: docker compose, so the agent owns a host directory of files/projects
-(files scope — full control inside the container, host reach limited to the
-mounted workspace; no host services/packages/docker):
+The agent owns host directories of files/projects (files scope — full control
+inside the container, host reach limited to the mounted dirs; no host
+services/packages/docker). Two equivalent paths:
+
+**`run.sh` — the primary deploy on the home server.** Builds the image and
+(re)runs the container with bind-mounted workspace/state/skills:
 
 ```bash
-HOST_WORKSPACE=/srv/openclaw docker compose up -d --build
+bash run.sh                 # docker build + graceful stop -t 150 + docker run
+docker logs -f openclaw-host
+```
+
+**docker compose — the declarative equivalent of `run.sh`** (same container
+name, bind paths, env, and uid), so either tool attaches to the *same* state
+without loss:
+
+```bash
+docker compose up -d --build      # override paths via HOST_WORKSPACE / HOST_STATE / HOST_SKILLS
 docker compose logs -f
 ```
 
-See [`docker-compose.yml`](docker-compose.yml) for the mounts and AWS-credential
-options. Or run the image directly:
-
-```bash
-docker build -t openclaw-host .
-docker run -d --restart unless-stopped --env-file .env \
-  -v /srv/openclaw:/data/workspace -v openclaw-state:/state openclaw-host
-```
-
-or via systemd — see [`deploy/openclaw-host.service`](deploy/openclaw-host.service).
+See [`run.sh`](run.sh) / [`docker-compose.yml`](docker-compose.yml) for the exact
+mounts (`/data/workspace`, `/state`, `/skills`), `HOME=/state`, and AWS-credential
+options, or run via systemd — see [`deploy/openclaw-host.service`](deploy/openclaw-host.service).
 
 **Scope note:** the agent runs commands *inside the container*. Mounting a host
 dir lets it manage those files, but not host services/packages. To let it

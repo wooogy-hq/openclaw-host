@@ -1,39 +1,46 @@
 # Always-on "agent owns this server's files" deployment (files/projects scope).
 #
 # The agent has full control INSIDE the container only. Its reach on the host is
-# exactly the workspace directory you bind-mount below — nothing else (no host
-# services, packages, or docker). S3 stays the source of truth; the bind mount
-# just persists the workspace on the host and lets you see/edit it directly.
+# exactly the directories you bind-mount below — nothing else (no host services,
+# packages, or docker). S3 stays the source of truth; the bind mounts persist
+# workspace/state/skills on the host and let you see/edit them directly.
+#
+# This file mirrors `run.sh` (the primary deploy on the home server) as a
+# declarative equivalent: SAME container name, SAME bind paths, SAME runtime env
+# and uid. Because the volumes are host BIND mounts (not named volumes), running
+# `docker compose up` attaches to the exact same state as run.sh — no state loss.
+# Keep the two in sync if you change either.
 #
 #   1. cp .env.example .env   # fill DATA_BUCKET, USER_ID, TELEGRAM_BOT_TOKEN, AI key
-#   2. HOST_WORKSPACE=/srv/openclaw docker compose up -d --build
+#   2. docker compose up -d --build
 #   3. docker compose logs -f
+#
+# Override host paths per-machine with HOST_WORKSPACE / HOST_STATE / HOST_SKILLS.
 #
 services:
   openclaw-host:
     build: .
     # image: openclaw-host:latest   # or use a prebuilt image instead of build
+    container_name: openclaw-host
     restart: unless-stopped
+    user: "1000:1000" # run as host uid 1000 so bind-mounted files stay owner-editable
     env_file: .env
     environment:
       WORKSPACE_DIR: /data/workspace
       OPENCLAW_STATE_DIR: /state
+      OPENCLAW_BIN: openclaw
+      HOME: /state # OpenClaw + Claude Code config/cache land in the persisted /state
       OPENCLAW_DISABLE_BONJOUR: "1" # no mDNS noise on a server
     volumes:
       # The agent's project files, visible/editable on the host. Also synced to S3.
-      # Override the host path with HOST_WORKSPACE (defaults to ./workspace).
-      - ${HOST_WORKSPACE:-./workspace}:/data/workspace
-      # Persist OpenClaw state (sessions/config/cron) across restarts.
-      - openclaw-state:/state
-      # Persist agent-installed skill plugins (via `install-skill`) across
-      # restarts AND rebuilds — the whole point of runtime skill installs.
-      - openclaw-skills:/skills
+      - ${HOST_WORKSPACE:-/home/wooogy/openclaw-workspace}:/data/workspace
+      # OpenClaw state (sessions/config/cron) + HOME — persisted across restarts.
+      - ${HOST_STATE:-/home/wooogy/openclaw-state}:/state
+      # Agent-installed skill plugins (via `install-skill`) — persisted across
+      # restarts AND rebuilds; the whole point of runtime skill installs.
+      - ${HOST_SKILLS:-/home/wooogy/openclaw-skills}:/skills
       # AWS credentials — pick ONE:
       #   (a) mount your profile read-only (uncomment), or
       #   (b) set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env, or
       #   (c) use an instance role if this server is an EC2/ECS host.
       # - ${HOME}/.aws:/home/oc/.aws:ro
-
-volumes:
-  openclaw-state:
-  openclaw-skills:
