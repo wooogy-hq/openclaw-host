@@ -26,6 +26,23 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --
 COPY bin/code-agent /usr/local/bin/code-agent
 RUN chmod +x /usr/local/bin/code-agent
 
+# Agent-skills plugin (addyosmani/agent-skills) — gives the headless Claude Code
+# the full spec->ship slash commands (/spec /plan /build /test /review /ship)
+# plus the underlying skills. Baked into the image rather than `/plugin install`
+# because code-agent runs Claude in non-interactive `-p` mode (no interactive
+# /plugin REPL) and ~/.claude is ephemeral; code-agent loads it via --plugin-dir.
+# Pin AGENT_SKILLS_REF to a tag/commit for reproducible builds.
+ARG AGENT_SKILLS_REF=main
+RUN git clone --depth 1 --branch ${AGENT_SKILLS_REF} \
+      https://github.com/addyosmani/agent-skills /opt/agent-skills && \
+    rm -rf /opt/agent-skills/.git
+
+# Runtime skill installer — lets the agent add/remove MORE skill plugins at
+# runtime into the persisted /skills volume (no rebuild/redeploy). code-agent
+# auto-loads /opt/agent-skills (baked default) + every plugin under /skills.
+COPY bin/install-skill /usr/local/bin/install-skill
+RUN chmod +x /usr/local/bin/install-skill
+
 # GitOps validation tools — so the agent can self-validate manifests BEFORE
 # committing to wooogy-hq/infra (helm lint + kubeconform schema + conftest
 # policy). Client-side only; no cluster access needed.
@@ -48,8 +65,12 @@ COPY --from=builder /build/dist/ ./dist/
 # OPENCLAW_STATE_DIR is OpenClaw's own var: it reads {dir}/openclaw.json and stores
 # sessions under {dir}/agents/<id>/sessions. index.ts also injects it into the gateway.
 ENV WORKSPACE_DIR=/data/workspace \
-    OPENCLAW_STATE_DIR=/state
-RUN mkdir -p /data/workspace /state && chown -R oc:oc /data /state /home/oc
+    OPENCLAW_STATE_DIR=/state \
+    SKILLS_DIR=/skills
+# /skills is a persisted volume (see docker-compose) for agent-installed skill
+# plugins. chown so the non-root `oc` user (and install-skill) can write to it;
+# a named volume inherits this ownership when first created.
+RUN mkdir -p /data/workspace /state /skills && chown -R oc:oc /data /state /skills /home/oc
 
 # Git auth that survives OpenClaw's sandboxed tool subprocesses (env- AND
 # HOME-independent): system-level /etc/gitconfig + an absolute credentials file

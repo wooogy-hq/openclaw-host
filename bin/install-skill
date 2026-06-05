@@ -1,0 +1,79 @@
+#!/bin/sh
+# install-skill — let the OpenClaw agent add/remove Claude Code skill *plugins*
+# at RUNTIME, persistently, with NO image rebuild or redeploy.
+#
+# Why this exists: code-agent runs Claude in headless `claude -p` mode, where the
+# interactive `/plugin install` REPL command does not exist. So the agent cannot
+# self-install via /plugin. The headless-compatible equivalent is to drop a
+# plugin repo as files into a persisted dir and load it with --plugin-dir.
+#
+# Plugins live in $SKILLS_DIR (default /skills — a persisted Docker volume).
+# code-agent auto-loads every valid plugin found there on each run. So once the
+# agent runs `install-skill add ...`, the skill is available from the next coding
+# task onward and survives container restarts.
+#
+#   install-skill add    <owner/repo|url> [name]   # git clone a plugin repo
+#   install-skill list                              # list installed plugins
+#   install-skill remove <name>                     # delete one
+#   install-skill update [name]                     # git pull (all, or one)
+set -eu
+
+SKILLS_DIR="${SKILLS_DIR:-/skills}"
+mkdir -p "$SKILLS_DIR"
+
+cmd="${1:-}"
+[ "$#" -gt 0 ] && shift
+
+case "$cmd" in
+  add|install)
+    repo="${1:?usage: install-skill add <owner/repo|url|path> [name]}"
+    case "$repo" in
+      http://*|https://*|git://*|ssh://*|git@*) url="$repo" ;;
+      /*|./*|../*|file://*)                     url="$repo" ;;  # local path / file URL
+      */*)                                      url="https://github.com/$repo" ;;
+      *) echo "install-skill: repo must be <owner/repo>, a git URL, or a local path" >&2; exit 2 ;;
+    esac
+    name="${2:-$(basename "$repo" .git)}"
+    dest="$SKILLS_DIR/$name"
+    if [ -d "$dest/.git" ]; then
+      echo "updating existing: $name"
+      git -C "$dest" pull --ff-only
+    else
+      git clone --depth 1 "$url" "$dest"
+    fi
+    if [ -f "$dest/.claude-plugin/plugin.json" ]; then
+      echo "OK: plugin '$name' installed — loads on the next coding task."
+    else
+      echo "WARNING: '$name' has no .claude-plugin/plugin.json; code-agent will skip it." >&2
+      echo "         (Bare skill repos need a SKILL.md under a CLAUDE_CONFIG_DIR skills dir instead.)" >&2
+    fi
+    ;;
+  list|ls)
+    found=0
+    for d in "$SKILLS_DIR"/*/; do
+      [ -d "$d" ] || continue
+      found=1
+      n=$(basename "$d")
+      if [ -f "$d/.claude-plugin/plugin.json" ]; then echo "$n  [plugin]"; else echo "$n  [no plugin.json — skipped]"; fi
+    done
+    [ "$found" = 0 ] && echo "(no skills installed in $SKILLS_DIR)"
+    ;;
+  remove|rm)
+    name="${1:?usage: install-skill remove <name>}"
+    rm -rf "${SKILLS_DIR:?}/$name" && echo "removed: $name"
+    ;;
+  update|pull)
+    if [ "${1:-}" = "" ]; then
+      for d in "$SKILLS_DIR"/*/; do
+        [ -d "$d/.git" ] || continue
+        echo "== $(basename "$d")"; git -C "$d" pull --ff-only
+      done
+    else
+      git -C "$SKILLS_DIR/$1" pull --ff-only
+    fi
+    ;;
+  *)
+    echo "usage: install-skill {add <owner/repo> [name]|list|remove <name>|update [name]}" >&2
+    exit 2
+    ;;
+esac

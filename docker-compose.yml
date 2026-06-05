@@ -25,6 +25,9 @@ services:
       - ${HOST_WORKSPACE:-./workspace}:/data/workspace
       # Persist OpenClaw state (sessions/config/cron) across restarts.
       - openclaw-state:/state
+      # Persist agent-installed skill plugins (via `install-skill`) across
+      # restarts AND rebuilds — the whole point of runtime skill installs.
+      - openclaw-skills:/skills
       # AWS credentials — pick ONE:
       #   (a) mount your profile read-only (uncomment), or
       #   (b) set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env, or
@@ -33,3 +36,4 @@ services:
 
 volumes:
   openclaw-state:
+  openclaw-skills:

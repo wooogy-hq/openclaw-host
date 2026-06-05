@@ -61,6 +61,32 @@ All config is via environment variables — see [`.env.example`](.env.example).
 Secrets (bot token, AI API key) are delivered via env only and are **never**
 written into `openclaw.json`.
 
+## Skills (runtime install, no redeploy)
+
+The coding delegate runs Claude Code headless (`claude -p`), where the interactive
+`/plugin install` REPL doesn't exist. Instead, skill **plugins** are loaded from
+disk via `--plugin-dir`:
+
+- **Baked-in default:** [`addyosmani/agent-skills`](https://github.com/addyosmani/agent-skills)
+  is cloned into `/opt/agent-skills` at build time, giving the agent
+  `/spec /plan /build /test /review /ship`. Pin a version with the
+  `AGENT_SKILLS_REF` build arg.
+- **Runtime, agent-installed:** the agent (or you) can add more plugins **without a
+  rebuild or redeploy** using the `install-skill` helper. Plugins land in the
+  persisted `/skills` volume (`openclaw-skills`) and survive restarts; `code-agent`
+  auto-loads every plugin found there on each run.
+
+```bash
+install-skill add <owner/repo> [name]   # git-clone a plugin repo into /skills
+install-skill list                       # list installed plugins
+install-skill update [name]              # git pull (all, or one)
+install-skill remove <name>
+```
+
+A plugin repo must contain `.claude-plugin/plugin.json`. The agent learns this
+workflow from its workspace `AGENTS.md` / `TOOLS.md`. Disable plugin loading with
+`CODE_AGENT_NO_PLUGINS=1`, or force a single dir with `CLAUDE_PLUGIN_DIR`.
+
 ## Architecture
 
 ```mermaid

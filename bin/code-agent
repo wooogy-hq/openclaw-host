@@ -21,7 +21,24 @@ fi
 case "$AGENT" in
   claude)
     # Headless, autonomous edits inside the (sandboxed) container workspace.
-    exec claude -p "$PROMPT" --dangerously-skip-permissions
+    #
+    # Load skill plugins from disk via --plugin-dir (repeatable). Interactive
+    # `/plugin install` can't run under `-p`, so plugins are loaded from:
+    #   - /opt/agent-skills : baked-in default (/spec /plan /build /test /review /ship)
+    #   - $SKILLS_DIR/*     : agent-installed at runtime via `install-skill` (persisted)
+    # Only dirs with a real plugin manifest are passed. Set CODE_AGENT_NO_PLUGINS=1
+    # to disable, or CLAUDE_PLUGIN_DIR to force a single explicit plugin dir.
+    set --
+    if [ "${CODE_AGENT_NO_PLUGINS:-0}" != "1" ]; then
+      if [ -n "${CLAUDE_PLUGIN_DIR:-}" ]; then
+        [ -d "$CLAUDE_PLUGIN_DIR" ] && set -- --plugin-dir "$CLAUDE_PLUGIN_DIR"
+      else
+        for d in /opt/agent-skills "${SKILLS_DIR:-/skills}"/*/; do
+          [ -d "$d" ] && [ -f "$d/.claude-plugin/plugin.json" ] && set -- "$@" --plugin-dir "$d"
+        done
+      fi
+    fi
+    exec claude -p "$PROMPT" --dangerously-skip-permissions "$@"
     ;;
   codex)
     # Non-interactive Codex run. Flags may need tuning when first enabled.
