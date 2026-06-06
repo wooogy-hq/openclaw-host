@@ -101,6 +101,73 @@ docker start openclaw-host
 
 ---
 
+## Gateway auth models: "local" (current) vs token / device-pairing
+
+The gateway supports several auth modes (`openclaw gateway --auth none|token|password|trusted-proxy`).
+Two matter here, and the difference is exactly why setting a token kills the bot:
+
+### Current — `gateway.mode:"local"`, no `gateway.auth` (permissive local-trust)
+- **In-process work is trusted.** The Telegram channel runs *inside* the gateway process, so the
+  agent turns it triggers do **not** open an external authenticated websocket — they just run.
+- **External CLI clients** (`openclaw cron`, `openclaw agent`, `openclaw status`, …) connect over
+  the websocket and are **not** trusted → `requires credentials before opening a websocket`.
+- Net: the **bot works with zero setup**, but you can't drive the gateway from the CLI (no cron).
+
+### Token / device-pairing — `gateway.auth:{mode:"token", token}`
+- **Every** connection must present the token *and* be a **paired device with an approved role**
+  (operator). Identity is per-device, not "is it loopback?".
+- External clients now connect (with the token) → **cron CLI works**.
+- BUT the agent runtime's own connection arrives as `device=no, scopes=0` and is **rejected**:
+  `pairing required: device is asking for more scopes than currently approved`. Until that device
+  is paired as operator (`openclaw devices approve` / `rotate`), the agent can't run turns → **the
+  Telegram bot goes silent.**
+
+| | local (current) | token / device-pairing |
+|---|---|---|
+| Telegram bot (in-process turns) | ✅ works | ❌ until the agent device is paired as operator |
+| `openclaw cron` / CLI (external) | ❌ "requires credentials" | ✅ with token (+ pairing for writes) |
+| Setup | none | generate token **and** pair the agent device |
+| Security model | trusts all loopback | per-device identity + roles |
+
+**The trap:** the token doesn't just *add* auth for the CLI — it also makes the gateway demand a
+paired-operator identity from the agent runtime, which it doesn't have by default. So a naive
+"set the token to fix cron" locks out the bot's own turns. The correct migration is to set the
+token **and** pair the agent device as operator together (via `openclaw devices`) — not yet
+worked out in this repo. Until then: stay on local (no token); the bot works, cron doesn't.
+
+---
+
+## Telegram bot receives nothing (no log activity on a message)
+
+**Symptom**
+You message `@<bot>` and get no reply, and `docker logs openclaw-host` shows **no activity at all**
+when the message is sent (not even an error). The telegram session transcript
+(`/state/agents/main/sessions/...telegram...`) stops updating. `getUpdates` returns `[]`,
+`getWebhookInfo` shows no webhook, and there is no `409 Conflict` in the logs.
+
+**Most likely cause — a second consumer is stealing the updates.**
+A Telegram bot token can only be polled by **one** consumer at a time: whichever `getUpdates`
+caller confirms an offset *removes* those updates for everyone else. If another deployment runs
+the **same `TELEGRAM_BOT_TOKEN`** (e.g. the `serverless-openclaw` stack this repo shares S3 state
+with — see README), it grabs and confirms each update, so this host's poller sees nothing. No
+`409` appears because they aren't long-polling at the exact same instant — they just race per call.
+
+**Diagnose**
+```bash
+# After sending a fresh message, peek WITHOUT consuming (briefly stop this poller first for a clean read):
+docker exec openclaw-host sh -lc 'T=$(tr "\0" "\n"</proc/1/environ|grep ^TELEGRAM_BOT_TOKEN=|cut -d= -f2); curl -s "https://api.telegram.org/bot$T/getUpdates?offset=-1&timeout=0"'
+# message present here but nothing in `docker logs` -> this host isn't fetching (polling broken)
+# empty right after you sent -> another consumer already took it (the shared-token case)
+```
+
+**Fix**
+- Ensure **only one** deployment polls the bot token. Stop the other (serverless) poller, or give
+  this host its **own** bot token.
+- Other (less common) causes: a webhook set on the token (`deleteWebhook` to clear), or a stuck
+  ingress offset (the `update-offset-default.json` was archived to `*.migrated`).
+
+---
+
 ## A configured MCP server disappears after a restart
 
 **Symptom**
