@@ -24,6 +24,7 @@ services:
     container_name: openclaw-host
     restart: unless-stopped
     user: "1000:1000" # run as host uid 1000 so bind-mounted files stay owner-editable
+    networks: [oc-net] # reach sidecar MCP servers (risk-radar-mcp) by container name
     env_file: .env
     environment:
       WORKSPACE_DIR: /data/workspace
@@ -44,3 +45,20 @@ services:
       #   (b) set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env, or
       #   (c) use an instance role if this server is an EC2/ECS host.
       # - ${HOME}/.aws:/home/oc/.aws:ro
+
+  # Sidecar MCP server (Python/FastMCP, HTTP on :8765). The agent connects via
+  # `openclaw mcp add risk-radar --transport streamable-http --url http://risk-radar-mcp:8765/mcp`
+  # (one-time; persists in /state/openclaw.json). Built by run-risk-radar-mcp.sh.
+  risk-radar-mcp:
+    image: risk-radar-mcp:latest
+    container_name: risk-radar-mcp
+    restart: unless-stopped
+    networks: [oc-net]
+    environment:
+      RISK_RADAR_HOST: 0.0.0.0
+      RISK_RADAR_PORT: "8765"
+    # No host port published — only the agent (on oc-net) consumes it.
+
+networks:
+  oc-net:
+    name: oc-net
