@@ -64,7 +64,13 @@ on the box.
 
 All config is via environment variables — see [`.env.example`](.env.example).
 Secrets (bot token, AI API key) are delivered via env only and are **never**
-written into `openclaw.json`.
+written into `openclaw.json`. `OPENCLAW_GATEWAY_TOKEN` is required for the agent
+and `openclaw cron` to authenticate to the gateway.
+
+> `openclaw.json` is regenerated from env on every boot (runtime-added keys like
+> `mcp` are preserved by a merge). For common failures — cron "requires
+> credentials", a vanishing MCP server, lost state — see
+> [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## Skills (runtime install, no redeploy)
 
