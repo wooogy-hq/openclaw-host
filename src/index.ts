@@ -11,14 +11,27 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { loadConfig } from "./config.js";
+import { loadConfig, mergeOpenclawConfig } from "./config.js";
 import { restoreFromS3, backupToS3 } from "./s3-sync.js";
 import { GatewaySupervisor } from "./supervisor.js";
 import { startup, shutdown, type HostDeps } from "./host.js";
 
+/**
+ * Write openclaw.json by MERGING our host-generated config over whatever is
+ * already on disk. The host-managed keys (gateway/channels/agents) are
+ * authoritative, but any other top-level keys added at runtime — notably `mcp`
+ * from `openclaw mcp add` — are preserved instead of being wiped on every boot.
+ */
 function writeConfigFile(filePath: string, config: Record<string, unknown>): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(config, null, 2), "utf-8");
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Record<string, unknown>;
+  } catch {
+    // first boot or unreadable — start from an empty base
+  }
+  const merged = mergeOpenclawConfig(existing, config);
+  fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
 }
 
 async function main(): Promise<void> {

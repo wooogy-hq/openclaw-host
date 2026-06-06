@@ -29,6 +29,11 @@ export interface HostConfig {
    *  {stateDir}/agents/default/sessions. Passed to the gateway as OPENCLAW_STATE_DIR. */
   stateDir: string;
   gatewayPort: number;
+  /** Gateway auth token written into openclaw.json as gateway.auth.token. Required
+   *  so the agent + `openclaw cron` (which talk to the gateway over a websocket)
+   *  can authenticate. Delivered via the OPENCLAW_GATEWAY_TOKEN env var (.env), so
+   *  it is stable across restarts. Empty => no auth block is written. */
+  gatewayToken: string;
   backupIntervalMs: number;
   telegram: TelegramConfig;
   provider: ProviderConfig;
@@ -74,6 +79,8 @@ export function loadConfig(env: Env = process.env): HostConfig {
     workspaceDir: env.WORKSPACE_DIR ?? "./data/workspace",
     stateDir: env.OPENCLAW_STATE_DIR ?? "./.openclaw",
     gatewayPort: env.OPENCLAW_GATEWAY_PORT ? Number(env.OPENCLAW_GATEWAY_PORT) : GATEWAY_PORT,
+    // index.ts overrides this with a persisted token when the env var is unset.
+    gatewayToken: env.OPENCLAW_GATEWAY_TOKEN ?? "",
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
     telegram: { enabled: true, dmPolicy, allowFrom },
     provider: resolveProviderConfig({
@@ -106,8 +113,16 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     telegram.allowFrom = cfg.telegram.allowFrom;
   }
 
+  // gateway.auth.token must be present (and stable) or the agent + `openclaw cron`
+  // can't open their gateway websocket ("requires credentials"). The gateway is
+  // loopback-bound; this token is shared by the local clients via this same file.
+  const gateway: Record<string, unknown> = { port: cfg.gatewayPort, mode: "local" };
+  if (cfg.gatewayToken) {
+    gateway.auth = { mode: "token", token: cfg.gatewayToken };
+  }
+
   return {
-    gateway: { port: cfg.gatewayPort, mode: "local" },
+    gateway,
     channels: { telegram },
     agents: {
       defaults: {
@@ -116,4 +131,18 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
       },
     },
   };
+}
+
+/**
+ * Merge our host-generated config over the existing openclaw.json. openclaw.json
+ * is rewritten on every boot from env; a plain overwrite would wipe top-level
+ * keys added at runtime (e.g. `mcp` from `openclaw mcp add`, or `meta`). Shallow
+ * merge keeps host-managed keys (gateway/channels/agents) authoritative while
+ * preserving everything else the running gateway persisted.
+ */
+export function mergeOpenclawConfig(
+  existing: Record<string, unknown>,
+  generated: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...existing, ...generated };
 }

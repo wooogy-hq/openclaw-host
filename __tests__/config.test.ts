@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig, buildOpenclawConfig } from "../src/config.js";
+import { loadConfig, buildOpenclawConfig, mergeOpenclawConfig } from "../src/config.js";
 
 const base = {
   DATA_BUCKET: "my-bucket",
@@ -22,6 +22,13 @@ describe("loadConfig", () => {
   it("reads the OpenClaw state dir (OPENCLAW_STATE_DIR) with a default", () => {
     expect(loadConfig({ ...base }).stateDir).toBe("./.openclaw");
     expect(loadConfig({ ...base, OPENCLAW_STATE_DIR: "/data/oc" }).stateDir).toBe("/data/oc");
+  });
+
+  it("reads the gateway token from env (empty when unset; index.ts persists one)", () => {
+    expect(loadConfig({ ...base }).gatewayToken).toBe("");
+    expect(loadConfig({ ...base, OPENCLAW_GATEWAY_TOKEN: "secret-tok" }).gatewayToken).toBe(
+      "secret-tok",
+    );
   });
 
   it("throws when DATA_BUCKET is missing", () => {
@@ -75,6 +82,16 @@ describe("buildOpenclawConfig", () => {
     expect((json.channels as any).telegram.allowFrom).toEqual(["111"]);
   });
 
+  it("writes gateway.auth.token when a token is set (so cron/agent can authenticate)", () => {
+    const json = buildOpenclawConfig(loadConfig({ ...base, OPENCLAW_GATEWAY_TOKEN: "tok-123" }));
+    expect((json.gateway as any).auth).toEqual({ mode: "token", token: "tok-123" });
+  });
+
+  it("omits gateway.auth when no token is set", () => {
+    const json = buildOpenclawConfig(loadConfig({ ...base }));
+    expect((json.gateway as any).auth).toBeUndefined();
+  });
+
   it("sets the gateway port and agent model/workspace", () => {
     const json = buildOpenclawConfig(
       loadConfig({ ...base, AI_PROVIDER: "anthropic", WORKSPACE_DIR: "/data/ws" }),
@@ -92,5 +109,24 @@ describe("buildOpenclawConfig", () => {
     expect((json.agents as any).defaults.model.primary).toBe(
       "amazon-bedrock/apac.anthropic.claude-sonnet-4-20250514-v1:0",
     );
+  });
+});
+
+describe("mergeOpenclawConfig", () => {
+  it("preserves runtime-added top-level keys (mcp) while host keys stay authoritative", () => {
+    const existing = {
+      gateway: { port: 1, mode: "local", auth: { mode: "token", token: "OLD" } },
+      channels: { telegram: { enabled: false } },
+      mcp: { servers: { "risk-radar": { url: "http://risk-radar-mcp:8765/mcp" } } },
+      meta: { lastTouchedAt: "x" },
+    };
+    const generated = buildOpenclawConfig(loadConfig({ ...base, OPENCLAW_GATEWAY_TOKEN: "NEW" }));
+    const merged = mergeOpenclawConfig(existing, generated);
+    // runtime keys survive the rewrite
+    expect((merged.mcp as any).servers["risk-radar"]).toBeDefined();
+    expect(merged.meta).toEqual({ lastTouchedAt: "x" });
+    // host-managed keys are replaced by the freshly generated ones
+    expect((merged.gateway as any).auth.token).toBe("NEW");
+    expect((merged.channels as any).telegram.enabled).toBe(true);
   });
 });
