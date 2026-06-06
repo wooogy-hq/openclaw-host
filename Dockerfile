@@ -13,8 +13,12 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates curl git && \
     rm -rf /var/lib/apt/lists/*
 
-# OpenClaw CLI on PATH (pinned to match the serverless deployment's session format).
-ARG OPENCLAW_VERSION=2026.6.1
+# OpenClaw CLI on PATH.
+# Pinned to 2026.5.28 — do NOT move to 2026.6.1: it has a Telegram ingress
+# regression where inbound DMs are fetched but never routed to the agent session
+# (the isolated polling ingress never delivers; spool stays empty), so the bot
+# silently stops replying. See openclaw/openclaw#86957 and docs/troubleshooting.md.
+ARG OPENCLAW_VERSION=2026.5.28
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
 # Coding CLIs — OpenClaw delegates coding to a backend-agnostic `code-agent`

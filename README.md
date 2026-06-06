@@ -24,7 +24,8 @@ npm run build
 npm start              # restore from S3 -> write openclaw.json -> run `openclaw gateway run`
 ```
 
-Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.4.26`), or point
+Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.5.28` — see the version
+pin warning below), or point
 `OPENCLAW_BIN` at a specific binary.
 
 ## Run as a service ("like an OS")
@@ -66,12 +67,15 @@ All config is via environment variables — see [`.env.example`](.env.example).
 Secrets (bot token, AI API key) are delivered via env only and are **never**
 written into `openclaw.json`.
 
+`OPENCLAW_GATEWAY_TOKEN` (required) authenticates the agent + `openclaw cron` to the
+gateway websocket.
+
 > `openclaw.json` is regenerated from env on every boot (runtime-added keys like
-> `mcp` are preserved by a merge). For common failures — a vanishing MCP server,
-> lost state, the bot going silent, or cron auth — see
-> [`docs/troubleshooting.md`](docs/troubleshooting.md). ⚠️ Do **not** set
-> `OPENCLAW_GATEWAY_TOKEN` to "fix" cron: it switches the gateway to a device-scope
-> model that blocks agent turns and silences the bot (see the troubleshooting guide).
+> `mcp` are preserved by a merge). ⚠️ **Keep OpenClaw pinned to `2026.5.28`** — `2026.6.1`
+> has a Telegram ingress regression that silently drops inbound DMs
+> ([#86957](https://github.com/openclaw/openclaw/issues/86957)). For this and other
+> failures (vanishing MCP, lost state, gateway auth), see
+> [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## Skills (runtime install, no redeploy)
 
