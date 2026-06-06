@@ -98,27 +98,28 @@ A plugin repo must contain `.claude-plugin/plugin.json`. The agent learns this
 workflow from its workspace `AGENTS.md` / `TOOLS.md`. Disable plugin loading with
 `CODE_AGENT_NO_PLUGINS=1`, or force a single dir with `CLAUDE_PLUGIN_DIR`.
 
-## MCP servers (sidecar pattern)
+## MCP servers
 
-OpenClaw speaks MCP natively (`openclaw mcp add|list|probe|reload`). The agent
-container is **Node-only** (no Python/uv, no docker socket), so MCP servers with
-other runtimes run as their **own host containers** on the shared `oc-net`
-network and the agent connects over HTTP by container name — the image stays
-clean and the MCP lifecycle is independent.
+OpenClaw speaks MCP natively (`openclaw mcp add|list|probe|reload`). Two cases:
 
-Example — [`risk-radar-mcp`](https://github.com/cha2hyun/risk-radar-mcp)
-(Python/FastMCP, streamable-http on `:8765`):
+- **Remote / hosted MCP** — nothing to run; register the URL:
+  ```bash
+  docker exec openclaw-host openclaw mcp add <name> --transport streamable-http --url <https-url>
+  ```
+- **Self-hosted MCP** — the agent container is **Node-only** (no Python/uv, no
+  docker socket), so a self-hosted server runs as its own **sidecar container** on
+  the shared `oc-net` network and the agent connects by container name. Build/run it
+  with the generic [`run-mcp-sidecar.sh`](run-mcp-sidecar.sh), then register it:
+  ```bash
+  ./run-mcp-sidecar.sh <container-name> <owner/repo> [-- <extra docker run args>]
+  docker exec openclaw-host openclaw mcp add <name> --transport streamable-http --url http://<container-name>:<port>/mcp
+  docker exec openclaw-host openclaw mcp reload
+  ```
 
-```bash
-bash run-risk-radar-mcp.sh          # build + run the sidecar on oc-net
-docker exec openclaw-host openclaw mcp add risk-radar \
-  --transport streamable-http --url http://risk-radar-mcp:8765/mcp   # one-time
-docker exec openclaw-host openclaw mcp reload
-```
-
-The registration persists in `/state/openclaw.json`; `run.sh` keeps openclaw-host
-attached to `oc-net` across redeploys. See [`docker-compose.yml`](docker-compose.yml)
-for the declarative equivalent (both services on `oc-net`).
+`run.sh` creates `oc-net` and keeps openclaw-host attached across redeploys; the
+registration persists via the openclaw.json merge (see
+[`docs/troubleshooting.md`](docs/troubleshooting.md)). For a concrete, runnable
+example see [`examples/mcp-sidecars/`](examples/mcp-sidecars/).
 
 ## Architecture
 

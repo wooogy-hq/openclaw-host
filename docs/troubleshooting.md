@@ -106,11 +106,12 @@ docker exec openclaw-host node -e 'console.log(Object.keys(JSON.parse(require("f
 `openclaw-host` can't resolve the name.
 
 **Root cause / fix**
-Sidecar MCP containers must share the `oc-net` docker network with `openclaw-host`, and the MCP
-must bind `0.0.0.0` (not `127.0.0.1`). `run.sh` creates `oc-net` and attaches openclaw-host;
-`run-risk-radar-mcp.sh` runs the sidecar on `oc-net` with `RISK_RADAR_HOST=0.0.0.0`. A reachable
-endpoint answers `HTTP 406` to a bare `GET /mcp` (MCP needs proper headers) — 406 means it's
-alive, not broken. See the README "MCP servers (sidecar pattern)" section.
+Self-hosted sidecar MCP containers must share the `oc-net` docker network with `openclaw-host`,
+and the MCP must bind `0.0.0.0` (not `127.0.0.1`). `run.sh` creates `oc-net` and attaches
+openclaw-host; run the sidecar with the generic `run-mcp-sidecar.sh` on `oc-net` (binding
+`0.0.0.0`). A reachable endpoint answers `HTTP 406` to a bare `GET /mcp` (MCP needs proper
+headers) — 406 means it's alive, not broken. See the README "MCP servers" section and
+`examples/mcp-sidecars/`.
 
 ---
 

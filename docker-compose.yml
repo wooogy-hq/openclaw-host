@@ -46,18 +46,11 @@ services:
       #   (c) use an instance role if this server is an EC2/ECS host.
       # - ${HOME}/.aws:/home/oc/.aws:ro
 
-  # Sidecar MCP server (Python/FastMCP, HTTP on :8765). The agent connects via
-  # `openclaw mcp add risk-radar --transport streamable-http --url http://risk-radar-mcp:8765/mcp`
-  # (one-time; persists in /state/openclaw.json). Built by run-risk-radar-mcp.sh.
-  risk-radar-mcp:
-    image: risk-radar-mcp:latest
-    container_name: risk-radar-mcp
-    restart: unless-stopped
-    networks: [oc-net]
-    environment:
-      RISK_RADAR_HOST: 0.0.0.0
-      RISK_RADAR_PORT: "8765"
-    # No host port published — only the agent (on oc-net) consumes it.
+# Self-hosted MCP servers run as their OWN sidecar containers on `oc-net`; the
+# agent reaches them by container name. They are intentionally NOT part of this
+# core file — add them with `run-mcp-sidecar.sh`, a (gitignored)
+# docker-compose.override.yml, or your own compose. They just need
+# `networks: [oc-net]`. See examples/mcp-sidecars/ for a worked example.
 
 networks:
   oc-net:
