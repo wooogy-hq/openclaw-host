@@ -32,7 +32,7 @@ persists by itself.
 
 ---
 
-## `openclaw cron` fails: "requires credentials before opening a websocket"
+## `openclaw cron` fails: "requires credentials" — and why the obvious fix breaks the bot
 
 **Symptom**
 ```
@@ -40,32 +40,64 @@ GatewayCredentialsRequiredError: gateway cron.list requires credentials before o
 Fix: configure gateway.auth token/password, pair this device, or pass --token/--password.
 ... unauthorized: gateway token not configured on gateway (set gateway.auth.token)
 ```
-The agent also reports it "can't access cron," and you may see a **gateway restart** interrupt a
-turn (the agent trying to self-fix `gateway.auth` triggers a restart).
 
 **Root cause**
 `openclaw cron` is managed *via the gateway* over an authenticated websocket. The generated
-`openclaw.json` had **no `gateway.auth`**, so on each boot the gateway minted a throwaway
-runtime token (`auth token was missing. Generated a runtime token for this startup`). Clients
-(the agent, the `cron` CLI) had no matching token → every cron call was rejected.
+`openclaw.json` has **no `gateway.auth`**, so on each boot the gateway mints a throwaway runtime
+token. External clients (the `cron` CLI, cron dispatch) have no matching token → cron is rejected.
 
-Setting it at runtime with `openclaw config set gateway.auth.token …` does **not** survive a
-restart — the boot rewrite of `openclaw.json` discards it (see above).
-
-**Fix (persistent, env-driven)**
-1. Put a stable token in `.env`:
-   ```bash
-   echo "OPENCLAW_GATEWAY_TOKEN=$(openssl rand -hex 32)" >> .env
-   ```
-2. Redeploy (`bash run.sh`). `buildOpenclawConfig` now writes
-   `gateway.auth = {mode:"token", token: <OPENCLAW_GATEWAY_TOKEN>}` on every boot, so the
-   gateway and all local clients share one stable token.
-
-**Verify**
-```bash
-docker logs --since 1m openclaw-host | grep -c "auth token was missing"   # -> 0
-docker exec openclaw-host openclaw cron list                              # -> table, no error
+**⚠️ The "obvious" fix makes things WORSE — do not use it blindly.**
+Setting `gateway.auth = {mode:"token", token}` via `OPENCLAW_GATEWAY_TOKEN` gets `cron list` past
+"requires credentials", BUT it flips the gateway into a **device-pairing / scope** model. Local
+clients — including the agent runtime that runs **Telegram turns** — then connect with `scopes=0`
+and are rejected:
 ```
+pairing required: device is asking for more scopes than currently approved
+unauthorized: gateway token mismatch
+```
+Net effect: **the agent can't run turns → the Telegram bot goes silent.** Granting the local
+device operator scope (pairing) is the missing piece and is **currently unsolved here**.
+
+**Status / recommendation**
+- The merge fix (next section) is the keeper.
+- Leave `OPENCLAW_GATEWAY_TOKEN` **unset** (default) so the bot works. Cron stays unavailable
+  until the scope/pairing piece is figured out (`openclaw pairing` / `approvals` / `devices`).
+- The env plumbing exists (`buildOpenclawConfig` writes `gateway.auth` when the var is set) but
+  setting it is a known footgun — see the next section for the failure mode it triggers.
+
+---
+
+## Telegram bot goes silent / gateway restart loop (agent self-fix loop)
+
+**Symptom**
+The bot stops replying. Logs show, every ~30s, `[gateway] signal SIGTERM received` /
+`gateway-tool: restart requested` and/or `[tools] cron failed: ... token mismatch`; the gateway
+keeps re-"ready"-ing. The agent may send "I was interrupted by a gateway restart, resend that."
+
+**Root cause**
+The agent has shell `exec` and broad autonomy. When it hit the cron/gateway-auth problem it tried
+to **self-fix** by writing a destructive plan into its **main session** — including
+`kill <gateway-pid>` to force a restart. On every restart the main session resumes and re-runs the
+plan → an infinite kill/restart loop that takes the Telegram channel down with it. (The Telegram
+DM uses a *separate* session and is fine; it just can't work while the gateway is being killed.)
+
+**Fix — quarantine the rogue main session (non-destructive)**
+```bash
+docker stop openclaw-host
+SES=/home/wooogy/openclaw-state/agents/main/sessions
+cp $SES/sessions.json $SES/sessions.json.bak
+# 1) the rogue id is sessions.json -> "agent:main:main".sessionId
+# 2) move its transcripts aside (recoverable):
+mkdir -p $SES/_quarantine && mv $SES/<sessionId>.* $SES/_quarantine/
+# 3) drop the agent:main:main pointer so a FRESH main session starts (keep telegram + cron):
+docker run --rm -v /home/wooogy/openclaw-state:/state node:22-slim \
+  node -e 'const f="/state/agents/main/sessions/sessions.json";const fs=require("fs");const d=JSON.parse(fs.readFileSync(f));delete d["agent:main:main"];fs.writeFileSync(f,JSON.stringify(d,null,2))'
+docker start openclaw-host
+```
+**Verify:** `docker logs --since 60s openclaw-host | grep -cE "kill |SIGTERM received|token mismatch"` → 0; `RestartCount` stays put.
+
+**Prevention:** don't ask the agent to fix gateway/cron auth itself, and don't set
+`OPENCLAW_GATEWAY_TOKEN` (previous section) — both can send it into this loop.
 
 ---
 
