@@ -1,0 +1,20 @@
+# SearXNG config for OpenClaw's `web_search` tool.
+# Copy to the host dir mounted at /etc/searxng (default /home/wooogy/searxng/settings.yml),
+# then run the searxng sidecar (docker-compose.sidecars.yml).
+#
+# The ONE thing that matters: `search.formats` MUST include `json` — the web_search
+# tool calls GET /search?q=...&format=json, and SearXNG 403s the JSON API unless it
+# is enabled. `server.limiter: false` avoids the bot-detection limiter blocking the
+# programmatic calls (no Redis needed).
+use_default_settings: true
+general:
+  instance_name: "wooogy-search"
+server:
+  secret_key: "CHANGE_ME"   # any random string: openssl rand -hex 32
+  limiter: false
+  image_proxy: true
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json

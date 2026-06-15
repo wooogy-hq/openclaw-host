@@ -1,0 +1,51 @@
+# HTTP sidecars (NON-MCP) the agent reaches by container name on `oc-net`.
+#
+# Two classes of sidecar exist in this project:
+#   - MCP servers   → registered with `openclaw mcp add` (see run-mcp-sidecar.sh).
+#   - HTTP services → the agent just curls them; wired by a URL in `.env`. ← THIS FILE
+#
+# Run them alongside the agent (oc-net is created by run.sh / the main compose):
+#   docker compose -f docker-compose.sidecars.yml up -d
+#
+# Then wire the agent in `.env` (see .env.example):
+#   SEARXNG_BASE_URL=http://searxng:8080
+#   BROWSER_URL=http://containerized-browser:8080
+#   BROWSER_PASSWORD=<openssl rand -hex 24>
+# ...and restart the agent (`bash run.sh`) so it picks up the new env.
+services:
+  # web_search backend. OpenClaw's built-in `web_search` tool calls a SearXNG
+  # instance; without SEARXNG_BASE_URL it fails "SearXNG base URL is not configured".
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    networks: [oc-net]
+    volumes:
+      # settings.yml MUST enable `search.formats: [html, json]` (the tool hits
+      # /search?format=json). Copy examples/sidecars/searxng-settings.yml here.
+      - ${HOST_SEARXNG:-/home/wooogy/searxng}:/etc/searxng:rw
+
+  # Headless Chromium + Playwright driven over HTTP (POST /exec), with a live
+  # read-only viewer at `/`. The agent drives it; a human can watch.
+  # Repo: https://github.com/unknownpgr/containerized-browser
+  containerized-browser:
+    image: unknownpgr/containerized-browser:latest
+    container_name: containerized-browser
+    restart: unless-stopped
+    networks: [oc-net]
+    mem_limit: 1500m # Chromium is heavy; cap it (the host is OOM-sensitive)
+    # Loopback only — watch with `ssh -L 8080:localhost:8080 <host>`. To expose the
+    # viewer via ingress, publish on the node interface AND gate it (Cloudflare
+    # Access / Traefik basic-auth) — /exec is arbitrary code-exec reachable on oc-net.
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      # Shared secret guarding everything except /guide. Set BROWSER_PASSWORD in .env.
+      AUTH_PASSWORD: ${BROWSER_PASSWORD:?set BROWSER_PASSWORD in .env}
+      VIEW_WIDTH: "1280"
+      VIEW_HEIGHT: "800"
+
+networks:
+  oc-net:
+    external: true
+    name: oc-net

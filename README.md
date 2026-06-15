@@ -139,6 +139,26 @@ registration persists via the openclaw.json merge (see
 [`docs/troubleshooting.md`](docs/troubleshooting.md)). For a concrete, runnable
 example see [`examples/mcp-sidecars/`](examples/mcp-sidecars/).
 
+## HTTP sidecars (web search & browser)
+
+Not everything the agent reaches is MCP. Some capabilities are plain HTTP services
+the agent **curls** — wired by a URL in `.env`, no `openclaw mcp add`. They run as
+their own containers on `oc-net`, declared in
+[`docker-compose.sidecars.yml`](docker-compose.sidecars.yml):
+
+```bash
+docker compose -f docker-compose.sidecars.yml up -d   # searxng + containerized-browser on oc-net
+```
+
+| sidecar | the agent uses it for | wired by | notes |
+|---|---|---|---|
+| **SearXNG** (`searxng/searxng`) | the built-in `web_search` tool | `SEARXNG_BASE_URL=http://searxng:8080` | without it `web_search` fails *"SearXNG base URL is not configured"*. `settings.yml` must enable `search.formats: [html, json]` — see [`examples/sidecars/searxng-settings.yml`](examples/sidecars/searxng-settings.yml). |
+| **containerized-browser** ([repo](https://github.com/unknownpgr/containerized-browser)) | JS-rendered pages, interaction, screenshots — a **live human-watchable** Chromium | `BROWSER_URL=http://containerized-browser:8080` + `BROWSER_PASSWORD` | agent drives it via `POST /exec` (it reads `GET /guide` first). Human watches `/` via `ssh -L 8080:localhost:8080 <host>`. ⚠️ `/exec` is arbitrary code-exec reachable on oc-net — don't expose the viewer publicly without a gate (Cloudflare Access / Traefik basic-auth). |
+
+After starting a sidecar, set its env var(s) in `.env` and `bash run.sh` so the
+agent picks them up. The agent learns to *use* the browser from its workspace
+`AGENTS.md` / `guides/BROWSER.md`.
+
 ## Architecture
 
 ```mermaid
@@ -163,7 +183,19 @@ flowchart TD
 
     WS[Workspace docs\n*.md, specs, ADRs] -->|kb compile| KB
     KB -->|kb push| KBV
+
+    OC -->|MCP| RR[risk-radar-mcp\noc-net sidecar]
+    OC -->|web_search| SX[SearXNG\noc-net sidecar]
+    OC <-->|POST /exec| BR[containerized-browser\noc-net sidecar]
+    Human([Human]) -.->|live view · ssh -L| BR
+
+    OC -->|deploy: commit| INF[wooogy-hq/infra\nFlux GitOps → k3s apps]
 ```
+
+The agent's own capabilities are extended by **oc-net sidecars** (MCP servers like
+`risk-radar-mcp`, plus the HTTP services above) — and it ships product apps to the
+k3s cluster by committing to [`wooogy-hq/infra`](https://github.com/wooogy-hq/infra)
+(Flux reconciles them). See [`guides/DEPLOY.md`] in the agent workspace.
 
 ## Knowledge Base Integration
 
