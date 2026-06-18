@@ -34,12 +34,37 @@ function writeConfigFile(filePath: string, config: Record<string, unknown>): voi
   fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
 }
 
+/**
+ * Persist the GitHub token to an absolute file the git credential helper reads
+ * (see Dockerfile). This is deliberately NOT git's `store` helper: on a failed
+ * auth git calls `credential reject`, which erases the store file and silently
+ * breaks every subsequent push. A plain file the helper `cat`s can't be wiped
+ * that way, and reading from a file (not `$GITHUB_TOKEN`) survives OpenClaw's
+ * sandboxed tool subprocesses, which run with the token scrubbed from their env.
+ * Rewritten every boot so a rotated token in the env propagates.
+ */
+function writeGitToken(stateDir: string): void {
+  const token = process.env.GITHUB_TOKEN;
+  const file = path.join(stateDir, ".gh-token");
+  if (!token) {
+    console.warn("[openclaw-host] GITHUB_TOKEN unset — git pushes will fail until it is provided");
+    return;
+  }
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(file, token, { mode: 0o600 });
+  fs.chmodSync(file, 0o600); // ensure 0600 even if the file pre-existed with looser perms
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
 
   // Point the OpenClaw gateway at our state dir (absolute) so it reads the
   // openclaw.json we write and stores sessions where we back them up.
   const stateDir = path.resolve(config.stateDir);
+
+  // Make the GitHub token available to git (credential helper reads this file).
+  writeGitToken(stateDir);
+
   const supervisor = new GatewaySupervisor({
     port: config.gatewayPort,
     env: { ...process.env, OPENCLAW_STATE_DIR: stateDir },

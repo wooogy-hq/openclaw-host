@@ -77,9 +77,13 @@ ENV WORKSPACE_DIR=/data/workspace \
 RUN mkdir -p /data/workspace /state /skills && chown -R oc:oc /data /state /skills /home/oc
 
 # Git auth that survives OpenClaw's sandboxed tool subprocesses (env- AND
-# HOME-independent): system-level /etc/gitconfig + an absolute credentials file
-# written to /state at runtime (the fine-grained PAT, wooogy-hq scoped).
-RUN git config --system credential.helper "store --file=/state/.git-credentials" && \
+# HOME-independent): a system-level /etc/gitconfig credential helper that reads
+# the PAT from an absolute file (/state/.gh-token, written each boot by
+# index.ts from $GITHUB_TOKEN). NOT git's `store` helper — on a failed auth git
+# `reject`s and erases the store file, silently breaking all later pushes; a
+# file the helper `cat`s can't be wiped that way and ignores the scrubbed env.
+RUN git config --system credential."https://github.com".helper \
+      '!f(){ echo username=x-access-token; echo "password=$(cat /state/.gh-token)"; }; f' && \
     git config --system url."https://github.com/".insteadOf "git@github.com:"
 
 USER oc
