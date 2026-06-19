@@ -159,6 +159,11 @@ export async function backupToS3(params: SyncParams): Promise<number> {
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
         if (exclude.has(entry.name)) continue; // node_modules/.git/... never go to S3
+        // A nested dir with its own .git is a cloned repo or submodule — it
+        // lives on its git remote, so it has no place in S3 state. (The backup
+        // ROOT may itself be a git repo; we only skip NESTED ones, never the
+        // root's own loose files.)
+        if (fs.existsSync(path.join(fullPath, ".git"))) continue;
         await uploadDir(fullPath, `${s3Prefix}/${entry.name}`);
       } else if (entry.isFile()) {
         const key = `${s3Prefix}/${entry.name}`;

@@ -154,6 +154,29 @@ describe("backupToS3", () => {
     expect(uploaded).toEqual(["p/keep.ts"]);
   });
 
+  it("skips nested git repos (clones/submodules) but keeps the root's own files", async () => {
+    // Backup root is itself a git repo with loose core files...
+    fs.mkdirSync(path.join(tmp, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "AGENTS.md"), "core");
+    fs.mkdirSync(path.join(tmp, "guides"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "guides/x.md"), "guide");
+    // ...containing a cloned sub-repo (its own .git) that must NOT be uploaded.
+    fs.mkdirSync(path.join(tmp, "some-repo/.git"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "some-repo/main.ts"), "clone source");
+
+    const uploaded: string[] = [];
+    const client: S3Like = {
+      send: async (cmd: unknown) => {
+        if (cmd instanceof PutObjectCommand) uploaded.push((cmd.input as { Key: string }).Key);
+        return {};
+      },
+    };
+
+    const count = await backupToS3({ bucket: "b", prefix: "p", localPath: tmp, client });
+    expect(count).toBe(2);
+    expect(uploaded.sort()).toEqual(["p/AGENTS.md", "p/guides/x.md"]);
+  });
+
   it("incremental: re-uploads only changed files when a manifest is given", async () => {
     fs.writeFileSync(path.join(tmp, "a.txt"), "a");
     fs.writeFileSync(path.join(tmp, "b.txt"), "b");
