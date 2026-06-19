@@ -66,6 +66,8 @@ export async function shutdown(deps: HostDeps): Promise<void> {
       prefix: t.prefix,
       localPath: t.localPath,
       region: config.awsRegion,
+      // Incremental: only re-upload files changed since the last backup.
+      manifestPath: path.join(config.stateDir, ".s3-sync-manifest.json"),
     });
   }
 }

@@ -27,6 +27,58 @@ export interface SyncParams {
   region?: string;
   /** Inject a client (tests); defaults to a real S3Client. */
   client?: S3Like;
+  /**
+   * Absolute path to a JSON manifest enabling INCREMENTAL backup: a file is
+   * re-uploaded only when its size+mtime differs from the last upload. Without
+   * it, backup falls back to re-uploading everything (legacy behaviour).
+   */
+  manifestPath?: string;
+  /** Directory names skipped during backup (defaults to DEFAULT_EXCLUDE_DIRS). */
+  exclude?: ReadonlySet<string>;
+}
+
+/**
+ * Reconstructible / ephemeral directories that must NOT be mirrored to S3.
+ * Backing these up re-uploaded tens of thousands of files every cycle (a
+ * cloned repo's node_modules + .git alone was ~85% of the workspace), which
+ * ran the S3 request bill into the ground. They're rebuildable from
+ * package.json / the git remote, so they have no place in shared state.
+ */
+export const DEFAULT_EXCLUDE_DIRS: ReadonlySet<string> = new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  ".cache",
+  ".turbo",
+  ".parcel-cache",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+  "coverage",
+]);
+
+type Manifest = Record<string, string>;
+
+function loadManifest(manifestPath?: string): Manifest {
+  if (!manifestPath) return {};
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as Manifest;
+  } catch {
+    return {}; // missing/corrupt → treat as a full backup
+  }
+}
+
+function saveManifest(manifestPath: string | undefined, manifest: Manifest): void {
+  if (!manifestPath) return;
+  try {
+    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  } catch (err) {
+    console.warn("[s3-sync] manifest write failed (next backup re-uploads):", err);
+  }
 }
 
 interface ListResponse {
@@ -86,30 +138,43 @@ export async function restoreFromS3(params: SyncParams): Promise<number> {
   return restored;
 }
 
-/** Upload every file under `localPath` to `prefix/`. Returns file count. */
+/**
+ * Upload files under `localPath` to `prefix/`, skipping excluded directories
+ * and — when a manifest is supplied — files unchanged since the last backup.
+ * Returns the number of files actually uploaded this run.
+ */
 export async function backupToS3(params: SyncParams): Promise<number> {
   const client = params.client ?? new S3Client({ region: params.region });
   const { bucket, prefix, localPath } = params;
+  const exclude = params.exclude ?? DEFAULT_EXCLUDE_DIRS;
 
   if (!fs.existsSync(localPath)) return 0;
+  const manifest = loadManifest(params.manifestPath);
   let uploaded = 0;
+  let manifestDirty = false;
 
   async function uploadDir(dirPath: string, s3Prefix: string): Promise<void> {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
+        if (exclude.has(entry.name)) continue; // node_modules/.git/... never go to S3
         await uploadDir(fullPath, `${s3Prefix}/${entry.name}`);
       } else if (entry.isFile()) {
+        const key = `${s3Prefix}/${entry.name}`;
+        const st = fs.statSync(fullPath);
+        const sig = `${st.mtimeMs}:${st.size}`;
+        if (manifest[key] === sig) continue; // unchanged since last upload — skip the PUT
         const fileBody = fs.readFileSync(fullPath);
-        await client.send(
-          new PutObjectCommand({ Bucket: bucket, Key: `${s3Prefix}/${entry.name}`, Body: fileBody }),
-        );
+        await client.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: fileBody }));
+        manifest[key] = sig;
+        manifestDirty = true;
         uploaded += 1;
       }
     }
   }
 
   await uploadDir(localPath, prefix);
+  if (manifestDirty) saveManifest(params.manifestPath, manifest);
   return uploaded;
 }

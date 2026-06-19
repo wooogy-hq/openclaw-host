@@ -133,4 +133,58 @@ describe("backupToS3", () => {
     });
     expect(count).toBe(0);
   });
+
+  it("skips excluded directories (node_modules, .git, ...)", async () => {
+    fs.writeFileSync(path.join(tmp, "keep.ts"), "k");
+    fs.mkdirSync(path.join(tmp, "node_modules/dep"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, "node_modules/dep/index.js"), "junk");
+    fs.mkdirSync(path.join(tmp, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(tmp, ".git/HEAD"), "ref");
+
+    const uploaded: string[] = [];
+    const client: S3Like = {
+      send: async (cmd: unknown) => {
+        if (cmd instanceof PutObjectCommand) uploaded.push((cmd.input as { Key: string }).Key);
+        return {};
+      },
+    };
+
+    const count = await backupToS3({ bucket: "b", prefix: "p", localPath: tmp, client });
+    expect(count).toBe(1);
+    expect(uploaded).toEqual(["p/keep.ts"]);
+  });
+
+  it("incremental: re-uploads only changed files when a manifest is given", async () => {
+    fs.writeFileSync(path.join(tmp, "a.txt"), "a");
+    fs.writeFileSync(path.join(tmp, "b.txt"), "b");
+    // Manifest lives OUTSIDE the backed-up dir (as in prod: /state/... vs the
+    // workspace/sessions targets), else the backup would re-upload it itself.
+    const manifestPath = `${tmp}.manifest.json`;
+
+    const uploaded: string[] = [];
+    const client: S3Like = {
+      send: async (cmd: unknown) => {
+        if (cmd instanceof PutObjectCommand) uploaded.push((cmd.input as { Key: string }).Key);
+        return {};
+      },
+    };
+
+    // First run uploads both and writes the manifest.
+    const first = await backupToS3({ bucket: "b", prefix: "p", localPath: tmp, client, manifestPath });
+    expect(first).toBe(2);
+
+    // Nothing changed → second run uploads nothing.
+    uploaded.length = 0;
+    const second = await backupToS3({ bucket: "b", prefix: "p", localPath: tmp, client, manifestPath });
+    expect(second).toBe(0);
+    expect(uploaded).toEqual([]);
+
+    // Change one file (bump mtime + content) → only that one re-uploads.
+    fs.writeFileSync(path.join(tmp, "a.txt"), "aa");
+    const future = new Date(Date.now() + 60_000);
+    fs.utimesSync(path.join(tmp, "a.txt"), future, future);
+    const third = await backupToS3({ bucket: "b", prefix: "p", localPath: tmp, client, manifestPath });
+    expect(third).toBe(1);
+    expect(uploaded).toEqual(["p/a.txt"]);
+  });
 });
