@@ -13,6 +13,19 @@ paths.
 > lifecycle) with 41 passing tests. Design in [`docs/spec.md`](docs/spec.md).
 > Pending: live smoke test on a real machine with a Telegram bot token.
 
+> 💸 **Cost lesson learned the hard way.** The periodic S3 backup originally
+> re-uploaded the *entire* workspace every cycle with no change detection. Once
+> the agent had cloned a handful of repos into its workspace, that workspace was
+> ~32k files — **~85% of them `node_modules/` + `.git/`** — and the backup ran
+> nonstop, generating **~4.5M S3 PUT/LIST requests per day (~$20/day, an AWS Cost
+> Anomaly alert)**, growing with every new clone. Real bill, real pain. Fixed in
+> [`src/s3-sync.ts`](src/s3-sync.ts): (1) skip `node_modules`/`.git`/build caches
+> **and any nested git repo** (clones live on their remote — back up only the
+> agent's own core state), and (2) **incremental** upload via a size+mtime
+> manifest so idle cycles do **zero** PUTs. Result: ~4.5M → ~660k → near-zero
+> requests/day. If you fork this, keep your workspace backup lean and never
+> mirror reconstructible junk to S3.
+
 ## Quick start (local)
 
 ```bash
