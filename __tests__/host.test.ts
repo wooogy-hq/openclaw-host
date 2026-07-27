@@ -64,6 +64,17 @@ describe("startup", () => {
     await startup(deps);
     expect(order.indexOf("restore")).toBeLessThan(order.indexOf("start"));
   });
+
+  it("starts without restoring when startup restore is disabled", async () => {
+    const deps = makeDeps();
+    deps.config.restoreOnStart = false;
+
+    await startup(deps);
+
+    expect(deps.restore).not.toHaveBeenCalled();
+    expect(deps.writeConfigFile).toHaveBeenCalledTimes(1);
+    expect(deps.supervisor.start).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("shutdown", () => {

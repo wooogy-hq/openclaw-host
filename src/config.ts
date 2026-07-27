@@ -35,6 +35,10 @@ export interface HostConfig {
    *  it is stable across restarts. Empty => no auth block is written. */
   gatewayToken: string;
   backupIntervalMs: number;
+  /** Restore workspace/session objects from S3 before starting the gateway.
+   *  Long-lived hosts with already-populated bind mounts can disable this to
+   *  avoid replaying stale historical objects on every container restart. */
+  restoreOnStart: boolean;
   telegram: TelegramConfig;
   provider: ProviderConfig;
 }
@@ -45,6 +49,14 @@ function required(env: Env, name: string): string {
   const v = env[name];
   if (!v) throw new Error(`Missing required environment variable: ${name}`);
   return v;
+}
+
+function booleanEnv(env: Env, name: string, defaultValue: boolean): boolean {
+  const value = env[name];
+  if (value === undefined || value === "") return defaultValue;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(`${name} must be 'true' or 'false'`);
 }
 
 export function loadConfig(env: Env = process.env): HostConfig {
@@ -82,6 +94,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     // index.ts overrides this with a persisted token when the env var is unset.
     gatewayToken: env.OPENCLAW_GATEWAY_TOKEN ?? "",
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
+    restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
     telegram: { enabled: true, dmPolicy, allowFrom },
     provider: resolveProviderConfig({
       AI_PROVIDER: env.AI_PROVIDER,

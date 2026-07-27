@@ -43,13 +43,15 @@ export async function startup(deps: HostDeps): Promise<void> {
   const { config, restore, writeConfigFile, supervisor } = deps;
   const { buildOpenclawConfig } = await import("./config.js");
 
-  for (const t of syncTargets(config)) {
-    await restore({
-      bucket: config.dataBucket,
-      prefix: t.prefix,
-      localPath: t.localPath,
-      region: config.awsRegion,
-    });
+  if (config.restoreOnStart) {
+    for (const t of syncTargets(config)) {
+      await restore({
+        bucket: config.dataBucket,
+        prefix: t.prefix,
+        localPath: t.localPath,
+        region: config.awsRegion,
+      });
+    }
   }
 
   writeConfigFile(path.join(config.stateDir, "openclaw.json"), buildOpenclawConfig(config));

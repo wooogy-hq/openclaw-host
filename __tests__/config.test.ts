@@ -14,9 +14,20 @@ describe("loadConfig", () => {
     expect(cfg.userId).toBe("u1");
     expect(cfg.gatewayPort).toBe(18789);
     expect(cfg.backupIntervalMs).toBe(120000);
+    expect(cfg.restoreOnStart).toBe(true);
     expect(cfg.telegram.enabled).toBe(true);
     expect(cfg.telegram.dmPolicy).toBe("pairing");
     expect(cfg.provider.provider).toBe("anthropic");
+  });
+
+  it("allows startup restore to be disabled explicitly", () => {
+    expect(loadConfig({ ...base, RESTORE_ON_START: "false" }).restoreOnStart).toBe(false);
+  });
+
+  it("rejects an invalid RESTORE_ON_START value", () => {
+    expect(() => loadConfig({ ...base, RESTORE_ON_START: "sometimes" })).toThrow(
+      /RESTORE_ON_START/,
+    );
   });
 
   it("reads the OpenClaw state dir (OPENCLAW_STATE_DIR) with a default", () => {
