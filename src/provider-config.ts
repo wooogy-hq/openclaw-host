@@ -10,7 +10,7 @@
  */
 
 /** How the gateway authenticates to the provider. `oauth` = subscription/OAuth
- *  session (e.g. Codex `codex login`); `api-key` = provider key from env;
+ *  profile (e.g. OpenClaw's OpenAI device login); `api-key` = provider key from env;
  *  `aws-sdk` = Bedrock via the AWS SDK credential chain. */
 export type AuthMode = "api-key" | "oauth" | "aws-sdk";
 
@@ -94,7 +94,8 @@ export const PROVIDER_DEFAULTS: Record<string, ProviderDefault> = {
   openai: {
     // openclaw's native `openai/*` route runs agent turns through the bundled
     // Codex app-server runtime; default auth is the ChatGPT-subscription OAuth
-    // session (`codex login`). Set AI_AUTH=key for OpenAI Platform API-key auth.
+    // profile created by `openclaw models auth login --provider openai
+    // --device-code`. Set AI_AUTH=key for OpenAI Platform API-key auth.
     openclawProvider: "openai",
     openclawApi: "openai-responses",
     defaultAuthMode: "oauth",
