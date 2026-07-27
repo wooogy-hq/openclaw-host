@@ -14,9 +14,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # OpenClaw CLI on PATH.
-# 2026.6.33 is the extended-stable release validated for native OpenAI Codex
-# OAuth, the Codex agent harness, and Telegram ingress in this host.
-ARG OPENCLAW_VERSION=2026.6.33
+# 2026.7.1-2 includes the auth-store locking fixes required by the long-running
+# gateway's native OpenAI Codex OAuth path.
+ARG OPENCLAW_VERSION=2026.7.1-2
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
 # Coding CLIs — OpenClaw delegates coding to a backend-agnostic `code-agent`
