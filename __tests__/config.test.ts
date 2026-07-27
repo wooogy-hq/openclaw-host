@@ -110,6 +110,45 @@ describe("buildOpenclawConfig", () => {
       "amazon-bedrock/apac.anthropic.claude-sonnet-4-20250514-v1:0",
     );
   });
+
+  it("maps an openai provider (Codex subscription) into the model primary with no custom block", () => {
+    const json = buildOpenclawConfig(loadConfig({ ...base, AI_PROVIDER: "openai" }));
+    expect((json.agents as any).defaults.model.primary).toBe("openai/gpt-5.5");
+    // openclaw's native openai route has a built-in endpoint → no models.providers needed
+    expect(json.models).toBeUndefined();
+  });
+
+  it("emits a models.providers block for a custom base URL (api-key) without leaking the key", () => {
+    const json = buildOpenclawConfig(
+      loadConfig({
+        ...base,
+        AI_PROVIDER: "litellm",
+        AI_BASE_URL: "http://litellm:4000/v1",
+        AI_MODEL: "gpt-4o",
+        AI_API_KEY: "sk-secret-should-not-appear",
+      }),
+    );
+    expect((json.agents as any).defaults.model.primary).toBe("litellm/gpt-4o");
+    const p = (json.models as any).providers.litellm;
+    expect(p.baseUrl).toBe("http://litellm:4000/v1");
+    expect(p.api).toBe("openai-completions");
+    expect(p.apiKey).toBe("${AI_API_KEY}");
+    // the actual secret must never be inlined into openclaw.json
+    expect(JSON.stringify(json)).not.toContain("sk-secret-should-not-appear");
+  });
+
+  it("omits apiKey for a custom oauth backend", () => {
+    const json = buildOpenclawConfig(
+      loadConfig({
+        ...base,
+        AI_PROVIDER: "my-proxy",
+        AI_BASE_URL: "http://proxy:8080",
+        AI_AUTH: "oauth",
+        AI_MODEL: "m1",
+      }),
+    );
+    expect((json.models as any).providers["my-proxy"].apiKey).toBeUndefined();
+  });
 });
 
 describe("mergeOpenclawConfig", () => {

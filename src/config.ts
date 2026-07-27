@@ -86,6 +86,9 @@ export function loadConfig(env: Env = process.env): HostConfig {
     provider: resolveProviderConfig({
       AI_PROVIDER: env.AI_PROVIDER,
       AI_MODEL: env.AI_MODEL,
+      AI_AUTH: env.AI_AUTH,
+      AI_BASE_URL: env.AI_BASE_URL,
+      AI_OPENCLAW_API: env.AI_OPENCLAW_API,
       AWS_REGION: awsRegion,
     }),
   };
@@ -121,7 +124,7 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     gateway.auth = { mode: "token", token: cfg.gatewayToken };
   }
 
-  return {
+  const result: Record<string, unknown> = {
     gateway,
     channels: { telegram },
     agents: {
@@ -131,6 +134,24 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
       },
     },
   };
+
+  // Custom OpenAI/Anthropic-compatible endpoints need an explicit provider block
+  // so openclaw knows the base URL + API family. Named providers with built-in
+  // endpoints (anthropic/deepseek/bedrock/openai) omit this. The API key is
+  // NEVER inlined — it stays in env and is referenced via ${AI_API_KEY}
+  // interpolation, so no secret lands in openclaw.json.
+  if (cfg.provider.baseUrl) {
+    const providerBlock: Record<string, unknown> = {
+      baseUrl: cfg.provider.baseUrl,
+      api: cfg.provider.openclawApi,
+    };
+    if (cfg.provider.authMode === "api-key") {
+      providerBlock.apiKey = "${AI_API_KEY}";
+    }
+    result.models = { providers: { [cfg.provider.openclawProvider]: providerBlock } };
+  }
+
+  return result;
 }
 
 /**
