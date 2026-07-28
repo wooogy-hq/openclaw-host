@@ -30,6 +30,12 @@ describe("loadConfig", () => {
     );
   });
 
+  it("loads and validates the default thinking effort", () => {
+    expect(loadConfig({ ...base, AI_THINKING: "xhigh" }).thinkingDefault).toBe("xhigh");
+    expect(loadConfig({ ...base }).thinkingDefault).toBeUndefined();
+    expect(() => loadConfig({ ...base, AI_THINKING: "extreme" })).toThrow(/AI_THINKING/);
+  });
+
   it("reads the OpenClaw state dir (OPENCLAW_STATE_DIR) with a default", () => {
     expect(loadConfig({ ...base }).stateDir).toBe("./.openclaw");
     expect(loadConfig({ ...base, OPENCLAW_STATE_DIR: "/data/oc" }).stateDir).toBe("/data/oc");
@@ -111,6 +117,13 @@ describe("buildOpenclawConfig", () => {
     const defaults = (json.agents as any).defaults;
     expect(defaults.model.primary).toBe("anthropic/claude-sonnet-4-20250514");
     expect(defaults.workspace).toBe("/data/ws");
+  });
+
+  it("sets the default agent thinking effort when configured", () => {
+    const json = buildOpenclawConfig(
+      loadConfig({ ...base, AI_PROVIDER: "openai", AI_THINKING: "xhigh" }),
+    );
+    expect((json.agents as any).defaults.thinkingDefault).toBe("xhigh");
   });
 
   it("maps a bedrock provider into the model primary", () => {

@@ -13,6 +13,27 @@ import { GATEWAY_PORT } from "./s3-contract.js";
 
 export type DmPolicy = "pairing" | "allowlist" | "open" | "disabled";
 const VALID_DM_POLICIES: readonly DmPolicy[] = ["pairing", "allowlist", "open", "disabled"];
+export type ThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "adaptive"
+  | "max"
+  | "ultra";
+const VALID_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "adaptive",
+  "max",
+  "ultra",
+];
 
 export interface TelegramConfig {
   enabled: boolean;
@@ -41,6 +62,8 @@ export interface HostConfig {
   restoreOnStart: boolean;
   telegram: TelegramConfig;
   provider: ProviderConfig;
+  /** Default model reasoning effort when a session/message does not override it. */
+  thinkingDefault?: ThinkingLevel;
 }
 
 type Env = Record<string, string | undefined>;
@@ -57,6 +80,17 @@ function booleanEnv(env: Env, name: string, defaultValue: boolean): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`${name} must be 'true' or 'false'`);
+}
+
+function thinkingEnv(env: Env): ThinkingLevel | undefined {
+  const value = env.AI_THINKING;
+  if (value === undefined || value === "") return undefined;
+  if (VALID_THINKING_LEVELS.includes(value as ThinkingLevel)) {
+    return value as ThinkingLevel;
+  }
+  throw new Error(
+    `AI_THINKING must be one of: ${VALID_THINKING_LEVELS.join(", ")}`,
+  );
 }
 
 export function loadConfig(env: Env = process.env): HostConfig {
@@ -96,6 +130,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
     restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
     telegram: { enabled: true, dmPolicy, allowFrom },
+    thinkingDefault: thinkingEnv(env),
     provider: resolveProviderConfig({
       AI_PROVIDER: env.AI_PROVIDER,
       AI_MODEL: env.AI_MODEL,
@@ -144,6 +179,7 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
       defaults: {
         model: { primary: `${cfg.provider.openclawProvider}/${cfg.provider.defaultModel}` },
         workspace: cfg.workspaceDir,
+        ...(cfg.thinkingDefault ? { thinkingDefault: cfg.thinkingDefault } : {}),
       },
     },
   };
