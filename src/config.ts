@@ -35,6 +35,40 @@ const VALID_THINKING_LEVELS: readonly ThinkingLevel[] = [
   "ultra",
 ];
 
+function isValidAgentModelConfig(value: unknown): boolean {
+  if (typeof value === "string") return value.length > 0;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+
+  const model = value as Record<string, unknown>;
+  if (Object.keys(model).some((key) => !["primary", "fallbacks", "timeoutMs"].includes(key))) {
+    return false;
+  }
+  if (
+    model.primary !== undefined &&
+    (typeof model.primary !== "string" || model.primary.length === 0)
+  ) {
+    return false;
+  }
+  if (
+    model.fallbacks !== undefined &&
+    (!Array.isArray(model.fallbacks) ||
+      !model.fallbacks.every(
+        (fallback) => typeof fallback === "string" && fallback.length > 0,
+      ))
+  ) {
+    return false;
+  }
+  if (
+    model.timeoutMs !== undefined &&
+    (typeof model.timeoutMs !== "number" ||
+      !Number.isInteger(model.timeoutMs) ||
+      model.timeoutMs <= 0)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export interface TelegramConfig {
   enabled: boolean;
   dmPolicy: DmPolicy;
@@ -64,6 +98,9 @@ export interface HostConfig {
   provider: ProviderConfig;
   /** Default model reasoning effort when a session/message does not override it. */
   thinkingDefault?: ThinkingLevel;
+  /** Treat valid runtime-written agent defaults as authoritative across restarts.
+   *  AI_MODEL/AI_THINKING remain bootstrap and invalid-config recovery defaults. */
+  dynamicAgentDefaults: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -131,6 +168,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
     telegram: { enabled: true, dmPolicy, allowFrom },
     thinkingDefault: thinkingEnv(env),
+    dynamicAgentDefaults: booleanEnv(env, "DYNAMIC_AGENT_DEFAULTS", false),
     provider: resolveProviderConfig({
       AI_PROVIDER: env.AI_PROVIDER,
       AI_MODEL: env.AI_MODEL,
@@ -213,6 +251,41 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
 export function mergeOpenclawConfig(
   existing: Record<string, unknown>,
   generated: Record<string, unknown>,
+  preserveAgentDefaults = false,
 ): Record<string, unknown> {
-  return { ...existing, ...generated };
+  const merged = { ...existing, ...generated };
+  if (!preserveAgentDefaults) return merged;
+
+  const existingAgents = existing.agents as Record<string, unknown> | undefined;
+  const generatedAgents = generated.agents as Record<string, unknown> | undefined;
+  const existingDefaults = existingAgents?.defaults as Record<string, unknown> | undefined;
+  const generatedDefaults = generatedAgents?.defaults as Record<string, unknown> | undefined;
+  if (!existingDefaults || !generatedDefaults || !generatedAgents) return merged;
+
+  // Preserve runtime-added agent keys (including agents.list and defaults such
+  // as concurrency/sandbox), while generated host fields remain authoritative.
+  const defaults = { ...existingDefaults, ...generatedDefaults };
+  delete defaults.model;
+  delete defaults.thinkingDefault;
+
+  // In dynamic mode, valid runtime model/thinking values are authoritative.
+  // Invalid legacy/manual values fall back to the validated env-generated
+  // defaults so a bad edit cannot make the next gateway boot fail.
+  const existingModel = existingDefaults.model;
+  if (isValidAgentModelConfig(existingModel)) {
+    defaults.model = existingModel;
+  } else if (generatedDefaults.model !== undefined) {
+    defaults.model = generatedDefaults.model;
+  }
+  if (
+    typeof existingDefaults.thinkingDefault === "string" &&
+    VALID_THINKING_LEVELS.includes(existingDefaults.thinkingDefault as ThinkingLevel)
+  ) {
+    defaults.thinkingDefault = existingDefaults.thinkingDefault;
+  } else if (generatedDefaults.thinkingDefault !== undefined) {
+    defaults.thinkingDefault = generatedDefaults.thinkingDefault;
+  }
+
+  merged.agents = { ...existingAgents, ...generatedAgents, defaults };
+  return merged;
 }

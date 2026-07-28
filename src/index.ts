@@ -22,7 +22,11 @@ import { startup, shutdown, type HostDeps } from "./host.js";
  * authoritative, but any other top-level keys added at runtime — notably `mcp`
  * from `openclaw mcp add` — are preserved instead of being wiped on every boot.
  */
-function writeConfigFile(filePath: string, config: Record<string, unknown>): void {
+function writeConfigFile(
+  filePath: string,
+  config: Record<string, unknown>,
+  preserveAgentDefaults = false,
+): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   let existing: Record<string, unknown> = {};
   try {
@@ -30,7 +34,7 @@ function writeConfigFile(filePath: string, config: Record<string, unknown>): voi
   } catch {
     // first boot or unreadable — start from an empty base
   }
-  const merged = mergeOpenclawConfig(existing, config);
+  const merged = mergeOpenclawConfig(existing, config, preserveAgentDefaults);
   fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), "utf-8");
 }
 
@@ -75,7 +79,8 @@ async function main(): Promise<void> {
     config,
     restore: restoreFromS3,
     backup: backupToS3,
-    writeConfigFile,
+    writeConfigFile: (filePath, generated) =>
+      writeConfigFile(filePath, generated, config.dynamicAgentDefaults),
     supervisor,
   };
 

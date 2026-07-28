@@ -36,6 +36,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...base, AI_THINKING: "extreme" })).toThrow(/AI_THINKING/);
   });
 
+  it("can enable runtime-persistent agent defaults", () => {
+    expect(loadConfig({ ...base }).dynamicAgentDefaults).toBe(false);
+    expect(
+      loadConfig({ ...base, DYNAMIC_AGENT_DEFAULTS: "true" }).dynamicAgentDefaults,
+    ).toBe(true);
+  });
+
   it("reads the OpenClaw state dir (OPENCLAW_STATE_DIR) with a default", () => {
     expect(loadConfig({ ...base }).stateDir).toBe("./.openclaw");
     expect(loadConfig({ ...base, OPENCLAW_STATE_DIR: "/data/oc" }).stateDir).toBe("/data/oc");
@@ -191,5 +198,104 @@ describe("mergeOpenclawConfig", () => {
     // host-managed keys are replaced by the freshly generated ones
     expect((merged.gateway as any).auth.token).toBe("NEW");
     expect((merged.channels as any).telegram.enabled).toBe(true);
+  });
+
+  it("preserves runtime model and thinking defaults when dynamic defaults are enabled", () => {
+    const existing = {
+      agents: {
+        list: [{ id: "main", name: "Main" }],
+        defaults: {
+          model: { primary: "openai/gpt-5.6-terra" },
+          thinkingDefault: "ultra",
+          maxConcurrent: 99,
+        },
+      },
+    };
+    const generated = buildOpenclawConfig(
+      loadConfig({
+        ...base,
+        AI_PROVIDER: "openai",
+        AI_MODEL: "gpt-5.6-sol",
+        AI_THINKING: "xhigh",
+      }),
+    );
+    const merged = mergeOpenclawConfig(existing, generated, true);
+    const defaults = (merged.agents as any).defaults;
+    expect(defaults.model.primary).toBe("openai/gpt-5.6-terra");
+    expect(defaults.thinkingDefault).toBe("ultra");
+    expect(defaults.workspace).toBe("./data/workspace");
+    expect(defaults.maxConcurrent).toBe(99);
+    expect((merged.agents as any).list).toEqual([{ id: "main", name: "Main" }]);
+  });
+
+  it("falls back to env-generated defaults when existing dynamic values are malformed", () => {
+    const existing = {
+      agents: {
+        defaults: {
+          model: { primary: "" },
+          thinkingDefault: "extreme",
+        },
+      },
+    };
+    const generated = buildOpenclawConfig(
+      loadConfig({
+        ...base,
+        AI_PROVIDER: "openai",
+        AI_MODEL: "gpt-5.6-sol",
+        AI_THINKING: "xhigh",
+      }),
+    );
+    const merged = mergeOpenclawConfig(existing, generated, true);
+    const defaults = (merged.agents as any).defaults;
+    expect(defaults.model.primary).toBe("openai/gpt-5.6-sol");
+    expect(defaults.thinkingDefault).toBe("xhigh");
+  });
+
+  it("preserves the valid string form of a runtime model override", () => {
+    const existing = {
+      agents: {
+        defaults: {
+          model: "openai/gpt-5.6-terra",
+        },
+      },
+    };
+    const generated = buildOpenclawConfig(
+      loadConfig({ ...base, AI_PROVIDER: "openai", AI_MODEL: "gpt-5.6-sol" }),
+    );
+    const merged = mergeOpenclawConfig(existing, generated, true);
+    expect((merged.agents as any).defaults.model).toBe("openai/gpt-5.6-terra");
+  });
+
+  it("removes malformed thinking when no env fallback is configured", () => {
+    const existing = {
+      agents: {
+        defaults: {
+          thinkingDefault: "extreme",
+        },
+      },
+    };
+    const generated = buildOpenclawConfig(
+      loadConfig({ ...base, AI_PROVIDER: "openai" }),
+    );
+    const merged = mergeOpenclawConfig(existing, generated, true);
+    expect((merged.agents as any).defaults.thinkingDefault).toBeUndefined();
+  });
+
+  it("rejects malformed runtime model objects and uses the env fallback", () => {
+    const generated = buildOpenclawConfig(
+      loadConfig({ ...base, AI_PROVIDER: "openai", AI_MODEL: "gpt-5.6-sol" }),
+    );
+    for (const model of [
+      { primary: "openai/gpt-5.6-terra", fallbacks: 123 },
+      { primary: "openai/gpt-5.6-terra", timeoutMs: -1 },
+      { primary: "openai/gpt-5.6-terra", unknown: true },
+    ]) {
+      const merged = mergeOpenclawConfig(
+        { agents: { defaults: { model } } },
+        generated,
+        true,
+      );
+      expect((merged.agents as any).defaults.model.primary).toBe("openai/gpt-5.6-sol");
+    }
   });
 });
