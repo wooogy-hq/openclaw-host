@@ -94,6 +94,11 @@ export interface HostConfig {
    *  Long-lived hosts with already-populated bind mounts can disable this to
    *  avoid replaying stale historical objects on every container restart. */
   restoreOnStart: boolean;
+  /** Mirror workspace/session state to S3 (periodic tick + final backup on
+   *  shutdown). Off makes the host purely machine-local: no PUT/LIST requests
+   *  and no S3 cost, at the price of no off-machine copy. Pairs with
+   *  RESTORE_ON_START — with both off, S3 is not touched at all. */
+  backupEnabled: boolean;
   telegram: TelegramConfig;
   provider: ProviderConfig;
   /** Default model reasoning effort when a session/message does not override it. */
@@ -166,6 +171,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     gatewayToken: env.OPENCLAW_GATEWAY_TOKEN ?? "",
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
     restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
+    backupEnabled: booleanEnv(env, "BACKUP_ENABLED", true),
     telegram: { enabled: true, dmPolicy, allowFrom },
     thinkingDefault: thinkingEnv(env),
     dynamicAgentDefaults: booleanEnv(env, "DYNAMIC_AGENT_DEFAULTS", false),

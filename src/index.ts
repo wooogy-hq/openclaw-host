@@ -89,6 +89,11 @@ async function main(): Promise<void> {
     `[openclaw-host] started for user=${config.userId} bucket=${config.dataBucket} ` +
       `provider=${config.provider.provider} model=${config.provider.defaultModel}`,
   );
+  if (!config.backupEnabled) {
+    // Logged once here rather than on every tick: silence about a disabled
+    // backup is exactly how you discover it the day you need the copy.
+    console.warn("[openclaw-host] BACKUP_ENABLED=false — state stays on this machine only");
+  }
 
   const backupTimer = setInterval(() => {
     shutdown(deps).catch((err) => console.warn("[openclaw-host] periodic backup failed:", err));

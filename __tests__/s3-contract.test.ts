@@ -6,6 +6,7 @@ import {
   GATEWAY_PORT,
   workspacePrefix,
   sessionsPrefix,
+  agentsPrefix,
 } from "../src/s3-contract.js";
 
 // Drift guard: these literals MUST match serverless-openclaw
@@ -25,5 +26,14 @@ describe("S3 layout contract", () => {
 
   it("builds the sessions prefix matching the serverless container layout", () => {
     expect(sessionsPrefix("u1")).toBe("sessions/u1/agents/default/sessions");
+  });
+
+  it("builds a per-agent sessions prefix for host-only agents", () => {
+    expect(sessionsPrefix("u1", "main")).toBe("sessions/u1/agents/main/sessions");
+    expect(sessionsPrefix("u1", "work")).toBe("sessions/u1/agents/work/sessions");
+  });
+
+  it("builds the agents parent prefix used on restore", () => {
+    expect(agentsPrefix("u1")).toBe("sessions/u1/agents");
   });
 });

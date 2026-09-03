@@ -33,7 +33,18 @@ export function workspacePrefix(userId: string): string {
   return `${WORKSPACE_S3_PREFIX}/${userId}`;
 }
 
-/** `s3://{bucket}/sessions/{userId}/agents/default/sessions` */
-export function sessionsPrefix(userId: string): string {
-  return `${SESSION_S3_PREFIX}/${userId}/agents/${SESSION_DEFAULT_AGENT}/sessions`;
+/** `s3://{bucket}/sessions/{userId}/agents` — the parent of every agent's
+ *  session dir. Used on restore, where the local agent dirs do not exist yet so
+ *  the ids cannot be enumerated from disk. */
+export function agentsPrefix(userId: string): string {
+  return `${SESSION_S3_PREFIX}/${userId}/agents`;
+}
+
+/** `s3://{bucket}/sessions/{userId}/agents/{agentId}/sessions`
+ *
+ *  The `default` case must stay byte-for-byte identical to the serverless
+ *  contract (see the file header); other agent ids are host-only and never
+ *  reach the serverless side. */
+export function sessionsPrefix(userId: string, agentId: string = SESSION_DEFAULT_AGENT): string {
+  return `${agentsPrefix(userId)}/${agentId}/sessions`;
 }

@@ -16,6 +16,8 @@ function makeDeps(overrides: Partial<HostDeps> = {}): HostDeps {
     backup: vi.fn(async () => 0),
     writeConfigFile: vi.fn(),
     supervisor: { start: vi.fn(), waitForExit: vi.fn(async () => 0), stop: vi.fn() },
+    // Injected so backup targets are asserted without touching the real fs.
+    listAgentIds: () => ["main"],
     ...overrides,
   };
 }
@@ -28,11 +30,12 @@ describe("startup", () => {
     expect(deps.restore).toHaveBeenCalledWith(
       expect.objectContaining({ bucket: "bucket", prefix: "workspaces/u1", localPath: "/data/ws" }),
     );
+    // The whole agents/ parent comes down: ids can't be scanned before restore.
     expect(deps.restore).toHaveBeenCalledWith(
       expect.objectContaining({
         bucket: "bucket",
-        prefix: "sessions/u1/agents/default/sessions",
-        localPath: "/home/oc/agents/default/sessions",
+        prefix: "sessions/u1/agents",
+        localPath: "/home/oc/agents",
       }),
     );
   });
@@ -88,9 +91,37 @@ describe("shutdown", () => {
     expect(deps.backup).toHaveBeenCalledWith(
       expect.objectContaining({
         bucket: "bucket",
-        prefix: "sessions/u1/agents/default/sessions",
-        localPath: "/home/oc/agents/default/sessions",
+        prefix: "sessions/u1/agents/main/sessions",
+        localPath: "/home/oc/agents/main/sessions",
       }),
     );
+  });
+
+  it("backs up one session prefix per agent, so a new agent needs no code change", async () => {
+    const deps = makeDeps({ listAgentIds: () => ["main", "work"] });
+    await shutdown(deps);
+
+    const prefixes = (deps.backup as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0].prefix);
+    expect(prefixes).toEqual([
+      "workspaces/u1",
+      "sessions/u1/agents/main/sessions",
+      "sessions/u1/agents/work/sessions",
+    ]);
+  });
+
+  it("skips S3 entirely when BACKUP_ENABLED=false", async () => {
+    const deps = makeDeps();
+    deps.config = { ...deps.config, backupEnabled: false };
+    await shutdown(deps);
+
+    expect(deps.backup).not.toHaveBeenCalled();
+  });
+
+  it("backs up only the workspace when no agent has a session dir yet", async () => {
+    const deps = makeDeps({ listAgentIds: () => [] });
+    await shutdown(deps);
+
+    expect(deps.backup).toHaveBeenCalledTimes(1);
+    expect(deps.backup).toHaveBeenCalledWith(expect.objectContaining({ prefix: "workspaces/u1" }));
   });
 });
