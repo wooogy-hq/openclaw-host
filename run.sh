@@ -16,7 +16,12 @@ docker run -d --name openclaw-host --restart unless-stopped \
   -v /home/wooogy/openclaw-workspace:/data/workspace \
   -v /home/wooogy/openclaw-state:/state \
   -v /home/wooogy/openclaw-skills:/skills \
+  -v /home/wooogy/openclaw-state/bin/kubectl:/usr/local/bin/kubectl:ro \
   openclaw-host
+# Read-only kubectl: the binary is bind-mounted above; its kubeconfig lives in the
+# state mount at /state/.kube/config (= $HOME/.kube/config). The token is the
+# cluster SA `kube-system:agent-readonly` (view ClusterRole — read-only, no Secrets).
+# So the agent can `kubectl get/describe/logs` to self-verify deploys, not mutate.
 # Attach to oc-net in addition to the default bridge (so MCP DNS by name works).
 docker network connect oc-net openclaw-host 2>/dev/null || true
 echo "started. logs: docker logs -f openclaw-host"
