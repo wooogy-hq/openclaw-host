@@ -326,6 +326,19 @@ describe("discord channel (opt-in second channel)", () => {
     });
   });
 
+  it("opens a channel to everyone without mentions when DISCORD_REQUIRE_MENTION=false", () => {
+    const cfg = loadConfig({
+      ...base,
+      DISCORD_BOT_TOKEN: "d",
+      DISCORD_DM_POLICY: "disabled",
+      DISCORD_REQUIRE_MENTION: "false",
+    });
+    const discord = (buildOpenclawConfig(cfg).channels as any).discord;
+    expect(discord.guilds).toEqual({ "*": { requireMention: false } });
+    expect(discord.dmPolicy).toBe("disabled");
+    expect(discord.allowFrom).toBeUndefined();
+  });
+
   it("leaves the telegram channel untouched when discord is added", () => {
     const withDiscord = buildOpenclawConfig(
       loadConfig({ ...base, DISCORD_BOT_TOKEN: "d", DISCORD_ALLOW_FROM: "42" }),

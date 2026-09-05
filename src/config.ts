@@ -82,6 +82,11 @@ export interface DiscordConfig {
   enabled: boolean;
   dmPolicy: DmPolicy;
   allowFrom: string[];
+  /** Require an @mention before the bot answers in a server channel. Anyone in
+   *  the channel can use it either way — this only decides whether it replies to
+   *  every message or waits to be addressed. False in a busy channel means one
+   *  agent turn per message posted. */
+  requireMention: boolean;
 }
 
 export interface HostConfig {
@@ -173,7 +178,12 @@ function loadDiscordConfig(env: Env): DiscordConfig | undefined {
     throw new Error("DISCORD_DM_POLICY=allowlist requires a non-empty DISCORD_ALLOW_FROM");
   }
 
-  return { enabled: true, dmPolicy, allowFrom };
+  return {
+    enabled: true,
+    dmPolicy,
+    allowFrom,
+    requireMention: booleanEnv(env, "DISCORD_REQUIRE_MENTION", true),
+  };
 }
 
 export function loadConfig(env: Env = process.env): HostConfig {
@@ -259,7 +269,7 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     const discord: Record<string, unknown> = {
       enabled: cfg.discord.enabled,
       dmPolicy: cfg.discord.dmPolicy,
-      guilds: { "*": { requireMention: true } },
+      guilds: { "*": { requireMention: cfg.discord.requireMention } },
       streaming: { mode: "off" },
     };
     if (cfg.discord.dmPolicy === "allowlist") {

@@ -3,7 +3,8 @@
 set -e
 cd "$(dirname "$0")"
 docker build -t openclaw-host .
-mkdir -p /home/wooogy/openclaw-workspace /home/wooogy/openclaw-state /home/wooogy/openclaw-skills
+mkdir -p /home/wooogy/openclaw-workspace /home/wooogy/openclaw-workspace-work \
+  /home/wooogy/openclaw-state /home/wooogy/openclaw-skills
 # Shared network so the agent can reach sidecar MCP servers (e.g. risk-radar-mcp)
 # by container name. See run-risk-radar-mcp.sh.
 docker network create oc-net 2>/dev/null || true
@@ -14,6 +15,7 @@ docker run -d --name openclaw-host --restart unless-stopped \
   -e WORKSPACE_DIR=/data/workspace -e OPENCLAW_STATE_DIR=/state \
   -e OPENCLAW_BIN=openclaw -e OPENCLAW_DISABLE_BONJOUR=1 -e HOME=/state \
   -v /home/wooogy/openclaw-workspace:/data/workspace \
+  -v /home/wooogy/openclaw-workspace-work:/data/workspace-work \
   -v /home/wooogy/openclaw-state:/state \
   -v /home/wooogy/openclaw-skills:/skills \
   -v /home/wooogy/openclaw-state/bin/kubectl:/usr/local/bin/kubectl:ro \
