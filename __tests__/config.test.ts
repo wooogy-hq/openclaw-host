@@ -349,6 +349,18 @@ describe("discord channel (opt-in second channel)", () => {
     );
   });
 
+  it("scopes the mention rule to one guild when DISCORD_GUILD is set", () => {
+    const cfg = loadConfig({
+      ...base,
+      DISCORD_BOT_TOKEN: "d",
+      DISCORD_DM_POLICY: "disabled",
+      DISCORD_REQUIRE_MENTION: "false",
+      DISCORD_GUILD: "1519825445724360856",
+    });
+    const discord = (buildOpenclawConfig(cfg).channels as any).discord;
+    expect(discord.guilds).toEqual({ "1519825445724360856": { requireMention: false } });
+  });
+
   it("rejects an allowlist policy with no ids, like telegram does", () => {
     expect(() => loadConfig({ ...base, DISCORD_BOT_TOKEN: "d" })).toThrow(/DISCORD_ALLOW_FROM/);
   });

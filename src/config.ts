@@ -87,6 +87,10 @@ export interface DiscordConfig {
    *  every message or waits to be addressed. False in a busy channel means one
    *  agent turn per message posted. */
   requireMention: boolean;
+  /** Guild id the mention rule applies to. Undefined means every guild (`*`).
+   *  Naming one matters when requireMention is false: the bot then answers every
+   *  message, and `*` would extend that to any server it is ever added to. */
+  guildId?: string;
 }
 
 export interface HostConfig {
@@ -183,6 +187,7 @@ function loadDiscordConfig(env: Env): DiscordConfig | undefined {
     dmPolicy,
     allowFrom,
     requireMention: booleanEnv(env, "DISCORD_REQUIRE_MENTION", true),
+    guildId: env.DISCORD_GUILD || undefined,
   };
 }
 
@@ -269,7 +274,9 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     const discord: Record<string, unknown> = {
       enabled: cfg.discord.enabled,
       dmPolicy: cfg.discord.dmPolicy,
-      guilds: { "*": { requireMention: cfg.discord.requireMention } },
+      guilds: {
+        [cfg.discord.guildId ?? "*"]: { requireMention: cfg.discord.requireMention },
+      },
       streaming: { mode: "off" },
     };
     if (cfg.discord.dmPolicy === "allowlist") {

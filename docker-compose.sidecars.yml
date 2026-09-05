@@ -44,6 +44,17 @@ services:
       AUTH_PASSWORD: ${BROWSER_PASSWORD:?set BROWSER_PASSWORD in .env}
       VIEW_WIDTH: "1280"
       VIEW_HEIGHT: "800"
+    volumes:
+      # Chromium's profile — cookies and logged-in sessions. The image points
+      # --user-data-dir at /tmp/cdp-profile, so without this volume every restart
+      # signs you out of every site and any "log in once, let the agent reuse the
+      # session" workflow silently breaks. A named volume rather than a bind mount:
+      # the container runs as root and the profile is opaque state, not something
+      # to edit from the host.
+      - browser-profile:/tmp/cdp-profile
+
+volumes:
+  browser-profile:
 
 networks:
   oc-net:
