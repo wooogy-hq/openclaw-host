@@ -14,17 +14,15 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # OpenClaw CLI on PATH.
-# Pinned to 2026.5.28 — do NOT move to 2026.6.1: it has a Telegram ingress
-# regression where inbound DMs are fetched but never routed to the agent session
-# (the isolated polling ingress never delivers; spool stays empty), so the bot
-# silently stops replying. See openclaw/openclaw#86957 and docs/troubleshooting.md.
-ARG OPENCLAW_VERSION=2026.5.28
+# 2026.7.1-2 includes the auth-store locking fixes required by the long-running
+# gateway's native OpenAI Codex OAuth path.
+ARG OPENCLAW_VERSION=2026.7.1-2
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
 # Coding CLIs — OpenClaw delegates coding to a backend-agnostic `code-agent`
 # wrapper (see bin/code-agent), selected at runtime via CODING_AGENT.
 #   claude (default): @anthropic-ai/claude-code  (CLAUDE_CODE_OAUTH_TOKEN | ANTHROPIC_API_KEY)
-#   codex           : @openai/codex              (OPENAI_API_KEY / codex login)
+#   codex           : @openai/codex              (OPENAI_API_KEY / OpenClaw OAuth profile)
 # Both are installed so swapping backends is purely a CODING_AGENT env change.
 RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --force
 COPY bin/code-agent /usr/local/bin/code-agent

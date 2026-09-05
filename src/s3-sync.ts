@@ -46,6 +46,7 @@ export interface SyncParams {
  */
 export const DEFAULT_EXCLUDE_DIRS: ReadonlySet<string> = new Set([
   "node_modules",
+  ".pnpm-store", // pnpm's content-addressed store — 72k files, refetchable
   ".git",
   ".next",
   ".cache",
