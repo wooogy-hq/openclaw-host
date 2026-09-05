@@ -1,5 +1,7 @@
 # openclaw-host
 
+> 한국어: [`README.ko.md`](README.ko.md)
+
 Standalone, machine-resident **OpenClaw** runtime with **S3 state sync**.
 
 Turn any machine (home server, VPS, spare box) into an always-on OpenClaw agent
@@ -9,9 +11,10 @@ workspace + session state to the **same S3 bucket** used by a
 deployment — so state is shared across the machine and the serverless web/Telegram
 paths.
 
-> Status: core runtime implemented (config, S3 sync, gateway supervisor,
-> lifecycle) with 41 passing tests. Design in [`docs/spec.md`](docs/spec.md).
-> Pending: live smoke test on a real machine with a Telegram bot token.
+> Status: running in production on a home server — Telegram + Discord, two
+> isolated agents, 79 passing tests. Design in [`docs/spec.md`](docs/spec.md);
+> the failures that cost real time are in
+> [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 > 💸 **Cost lesson learned the hard way.** The periodic S3 backup originally
 > re-uploaded the *entire* workspace every cycle with no change detection. Once
@@ -37,9 +40,9 @@ npm run build
 npm start              # restore from S3 -> write openclaw.json -> run `openclaw gateway run`
 ```
 
-Requires the `openclaw` CLI on PATH (`npm i -g openclaw@2026.5.28` — see the version
-pin warning below), or point
-`OPENCLAW_BIN` at a specific binary.
+Requires the `openclaw` CLI on PATH at the version this repo pins — read
+`OPENCLAW_VERSION` from the [`Dockerfile`](Dockerfile) rather than picking one
+(see the pin warning below) — or point `OPENCLAW_BIN` at a specific binary.
 
 ## Run as a service ("like an OS")
 
@@ -83,11 +86,18 @@ written into `openclaw.json`.
 `OPENCLAW_GATEWAY_TOKEN` (required) authenticates the agent + `openclaw cron` to the
 gateway websocket.
 
-> `openclaw.json` is regenerated from env on every boot (runtime-added keys like
-> `mcp` are preserved by a merge). ⚠️ **Keep OpenClaw pinned to `2026.5.28`** — `2026.6.1`
-> has a Telegram ingress regression that silently drops inbound DMs
-> ([#86957](https://github.com/openclaw/openclaw/issues/86957)). For this and other
-> failures (vanishing MCP, lost state, gateway auth), see
+> `openclaw.json` is regenerated from env on every boot — `gateway`, `channels`
+> and `agents` are host-owned, everything else (runtime `mcp` servers, routing
+> `bindings`, `auth` profiles) is preserved by a shallow merge. So a channel added
+> with `openclaw channels add` is wiped on the next boot and has to come from env
+> instead, while `openclaw agents add` and `agents bind` persist.
+>
+> ⚠️ **The OpenClaw version is pinned deliberately** (`Dockerfile: OPENCLAW_VERSION`).
+> Each bump in this repo's history fixed a specific breakage on the OpenAI/Codex
+> OAuth path — the current pin carries the auth-store locking fixes a long-running
+> gateway needs. Bumping it blind has broken inbound Telegram
+> ([#86957](https://github.com/openclaw/openclaw/issues/86957)) and provider auth
+> before. For that and other failures, see
 > [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## Skills (runtime install, no redeploy)
@@ -157,45 +167,88 @@ docker compose -f docker-compose.sidecars.yml up -d   # searxng + containerized-
 
 After starting a sidecar, set its env var(s) in `.env` and `bash run.sh` so the
 agent picks them up. The agent learns to *use* the browser from its workspace
-`AGENTS.md` / `guides/BROWSER.md`.
+`AGENTS.md` / `guides/BROWSER.md`. Note the `/exec` body is **raw JavaScript**,
+not JSON.
+
+**Browser login sessions.** The Chromium profile lives in the `browser-profile`
+named volume ([`run-browser.sh`](run-browser.sh)). That volume is what makes "a
+human logs in once, the agent reuses the session" hold: without it the image
+keeps the profile in container-local `/tmp`, so every restart signs you out of
+every site. Prefer handing the agent a session a human established over handing
+it account credentials.
+
+## Agents & channels
+
+One gateway, N **isolated agents** — each with its own workspace, session
+history, auth profile order and identity. Channels route to agents by binding:
+
+```bash
+openclaw agents add work --workspace /data/workspace-work --model openai/gpt-5.6-sol
+openclaw agents bind --agent work --bind discord     # discord → work; telegram stays on the default
+openclaw agents bindings
+```
+
+Two things bite here, both in
+[`docs/troubleshooting.md`](docs/troubleshooting.md): a binding does nothing
+until the gateway restarts, and the new workspace must be a **host bind mount**
+in `run.sh` (`/data` is root-owned in the container, and an unmounted workspace
+dies with the image).
+
+Isolation is real — a second agent starts from a blank workspace template and
+cannot read the first one's `MEMORY.md` / `IDENTITY.md`. Auth profiles *are*
+inherited, so a new agent needs no second login.
+
+## Provider & model
+
+`AI_PROVIDER` picks the brain: `anthropic`, `bedrock`, `deepseek`, `openai`, or
+any other value for a custom OpenAI/Anthropic-compatible endpoint described
+entirely by env (`AI_BASE_URL` + `AI_MODEL` + `AI_OPENCLAW_API`). `AI_AUTH`
+picks how it authenticates — `key`, `oauth`, or `aws-sdk`.
+
+`AI_PROVIDER=openai` with the default `AI_AUTH=oauth` runs agent turns through
+OpenClaw's bundled **Codex app-server** on a ChatGPT-subscription profile
+(`openclaw models auth login --provider openai --device-code`) rather than
+per-token API billing. Credentials live in the per-agent auth store, never in
+`openclaw.json` and never in S3.
+
+> With more than one profile for a provider and no explicit order, OpenClaw
+> **round-robins** between them — including through one whose quota is spent. Pin
+> the order per agent: `openclaw models auth order set --agent <id> --provider openai <profile…>`.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
     User([User]) -->|message| TG[Telegram]
-    TG -->|webhook / polling| OC[OpenClaw\nDeepSeek v4 Pro]
+    Team([Team]) -->|message| DC[Discord]
 
-    OC -->|coding task| CA[code-agent\nClaude Code --print]
-    OC -->|knowledge query| KBQ[kb-query skill]
+    TG --> MAIN[agent: main<br/>/data/workspace]
+    DC --> WORK[agent: work<br/>/data/workspace-work]
 
-    KBQ -->|shell exec| KB[kb CLI\n~/.local/bin/kb]
-    KB -->|LLM inference| DS[DeepSeek API]
-    KB <-->|read concepts| KBV[(kb-vault\nwooogy-hq/kb-vault\n56 concepts)]
+    subgraph HOST[openclaw-host container]
+      MAIN --> GW[OpenClaw gateway<br/>loopback :18789]
+      WORK --> GW
+      GW -->|AI_PROVIDER / AI_AUTH| BRAIN[Codex app-server<br/>ChatGPT OAuth · gpt-5.6-sol]
+      GW -->|coding task| CA[code-agent]
+    end
 
-    CA -->|code + diffs| OC
-    DS -->|answer| KB
-    KB -->|answer| KBQ
-    KBQ -->|context| OC
+    GW -->|MCP| RR[risk-radar-mcp<br/>oc-net sidecar]
+    GW -->|web_search| SX[SearXNG<br/>oc-net sidecar]
+    GW <-->|POST /exec| BR[containerized-browser<br/>oc-net sidecar]
+    Human([Human]) -.->|live view · ssh -L<br/>logs in, agent reuses session| BR
 
-    OC -->|reply| TG
-    TG -->|reply| User
+    MAIN -.->|workspace| S3[(S3 bucket<br/>shared with serverless-openclaw)]
+    MAIN -.->|sessions per agent| S3
+    WORK -.->|sessions per agent| S3
 
-    WS[Workspace docs\n*.md, specs, ADRs] -->|kb compile| KB
-    KB -->|kb push| KBV
-
-    OC -->|MCP| RR[risk-radar-mcp\noc-net sidecar]
-    OC -->|web_search| SX[SearXNG\noc-net sidecar]
-    OC <-->|POST /exec| BR[containerized-browser\noc-net sidecar]
-    Human([Human]) -.->|live view · ssh -L| BR
-
-    OC -->|deploy: commit| INF[wooogy-hq/infra\nFlux GitOps → k3s apps]
+    GW -->|deploy: commit| INF[wooogy-hq/infra<br/>Flux GitOps → k3s apps]
 ```
 
-The agent's own capabilities are extended by **oc-net sidecars** (MCP servers like
-`risk-radar-mcp`, plus the HTTP services above) — and it ships product apps to the
-k3s cluster by committing to [`wooogy-hq/infra`](https://github.com/wooogy-hq/infra)
-(Flux reconciles them). See [`guides/DEPLOY.md`] in the agent workspace.
+S3 sync is per agent — `sessions/{userId}/agents/{agentId}/sessions` — and is
+derived from the agent dirs on disk, so a new agent is picked up with no code
+change. The provider auth store sits beside those dirs and is deliberately
+**never** uploaded. Set `BACKUP_ENABLED=false` for a purely machine-local host
+(no PUT/LIST requests, no S3 cost, and no off-machine copy).
 
 ## Knowledge Base Integration
 
@@ -236,10 +289,13 @@ system prompt.
 ## What it is / isn't
 
 - **Is:** OpenClaw process supervisor + S3 workspace/session sync. Native channels
-  (Telegram in v1) — OpenClaw talks to chat platforms directly.
+  (Telegram, Discord) — OpenClaw talks to chat platforms directly, one agent per
+  binding.
 - **Isn't:** a serverless stack. No API Gateway, Lambda, DynamoDB, or Bridge.
 
 State is shared with a `serverless-openclaw` deployment through the same S3
-bucket: `workspaces/{userId}/...` and `sessions/{userId}/agents/default/sessions/...`.
+bucket: `workspaces/{userId}/...` and `sessions/{userId}/agents/{agentId}/sessions/...`.
+The `default` agent id is the vendored contract with the serverless side and must
+not drift; host-only agents get their own prefixes alongside it.
 See [`docs/spec.md`](docs/spec.md) for the full architecture, S3 layout contract,
 and boundaries.
