@@ -167,6 +167,113 @@ mounts) created a fresh empty `/state`. Both `run.sh` and `docker-compose.yml` n
 host bind mounts (`/home/wooogy/openclaw-{workspace,state,skills}`), so either tool attaches to the
 same state. Never point `/state` at a fresh named volume.
 
+## A second agent ignores its channel binding
+
+`openclaw agents bind --agent work --bind discord` writes the route into `openclaw.json`'s
+top-level `bindings` key and prints it back happily, but the running gateway read that file at
+boot. Until you restart, every message keeps going to the default agent — and the symptom is
+confusing, because `openclaw agents bindings` shows the binding you expect.
+
+Check which agent actually handled a message by watching which session dir grows:
+
+```
+for a in main work; do ls -lt /state/agents/$a/sessions/*.jsonl | head -1; done
+```
+
+A new session file under the *intended* agent (and a `sessionKey` like
+`agent:work:discord:channel:<id>`) is the proof. `bindings` survives redeploys — `run.sh` only
+overwrites `gateway`/`channels`/`agents`.
+
+## A new agent's workspace fails with EACCES
+
+`openclaw agents add work --workspace /data/workspace-work` fails with
+`EACCES: permission denied, mkdir`. `/data` is root-owned inside the container and the gateway runs
+as uid 1000. Add a host bind mount in `run.sh` first — which you want regardless, or the workspace
+lives in the image layer and disappears on the next rebuild.
+
+## The agent gets 404 on a private org repo
+
+A fine-grained PAT only sees an organisation that either owns the token or has approved it. A token
+issued under your personal account returns **404** (not 403) for org repos — the repo is invisible,
+not forbidden. Issue a new one with **Resource owner = the org**.
+
+Tokens are then routed per path by `/state/bin/git-credential-oc`, which git reaches through
+`credential.https://github.com.helper` in `/state/.gitconfig` (with `usehttppath=true`, so git
+passes `path=<org>/<repo>.git`):
+
+```
+the-form/*   -> /state/.gh-token-theform
+saedungji/*  -> /state/.gh-token-saju
+*            -> /state/.gh-token          (wooogy-hq)
+```
+
+Two traps when adding an org:
+
+- A repo-local `credential.helper` does **not** win. It is a *generic* helper, and the URL-scoped
+  `credential.https://github.com.helper` above is applied after it. Add the org to the router
+  instead.
+- `git clone` from the host still hits the global `credential.helper=store`, which answers first
+  with the wrong token (`Write access to repository not granted`, 403). Reset the list with an
+  empty value before overriding: `git -c credential.helper= -c credential.helper="store --file=…"`.
+
+`git-credential-oc` lives only in `/state/bin/` — it is not in this repo and not created by the
+Dockerfile. Losing the state mount loses every non-default org's git auth with no record of how to
+rebuild it.
+
+## Agent shell tool fails: `bwrap: No permissions to create a new namespace`
+
+Every `bash` tool call the agent makes dies before running, and the agent — having no way to read
+its own workspace — falls back to fetching files over public HTTPS. Private repos answer **404**
+there, so the agent reports something like *"GitHub 연결이 승인되지 않았어"* and asks you to approve
+a connection. **There is no connection to approve.** The clone on disk is fine; check
+`git -C <repo> fetch` from inside the container before believing an auth story.
+
+Cause: Codex wraps every shell command in bubblewrap, which must create a user namespace and
+remount `/`. Docker's default seccomp profile blocks the first and its AppArmor profile the second.
+The host sysctl is irrelevant — `kernel.unprivileged_userns_clone` was already `1` here; it is the
+*container* policy that refuses.
+
+Fix (already in `run.sh`):
+
+```
+--security-opt seccomp=unconfined --security-opt apparmor=unconfined
+```
+
+Both are required. Measured on this host, running the vendored bwrap as uid 1000:
+
+| flags | result |
+|---|---|
+| (default) | `No permissions to create a new namespace` |
+| `seccomp=unconfined` | `Failed to make / slave` (AppArmor) |
+| `apparmor=unconfined` | `No permissions to create a new namespace` (seccomp) |
+| `cap-add SYS_ADMIN` | `Failed to make / slave` |
+| `apparmor=unconfined` + `cap-add SYS_ADMIN` | `pivot_root: Operation not permitted` |
+| **`seccomp=unconfined` + `apparmor=unconfined`** | **OK** |
+
+### Things that look like the fix and are not
+
+- **`sandbox_mode = "danger-full-access"`** in the agent's `codex-home/config.toml`. Codex's own
+  escape hatch, and it does work in a plain Codex CLI — but OpenClaw narrows the value back
+  (openclaw/openclaw#83018), so the setting has no effect here.
+- **`plugins.entries.codex.config.appServer.sandbox`**. The key exists in OpenClaw's schema and
+  `config set` accepts it, but on 2026.7.1-2 it changes nothing, same upstream cause.
+- **`tools.exec.host` / `agents.defaults.sandbox.mode`**. These govern OpenClaw's *own* sandbox,
+  which defaults to `off` and was never the thing wrapping the command.
+- **setuid on bwrap** (`chmod u+s`), the fix most often suggested online. The bwrap Codex ships is
+  a static musl build that rejects it outright (`setuid use of bubblewrap is not supported in this
+  build`), and the distro package instead fails at `capset` because Docker drops the capabilities
+  it wants.
+
+### What the flags cost
+
+The container's syscall and mount confinement is given up; isolation still rests on uid 1000 and
+the bind mounts in `run.sh`. In exchange Codex's per-command sandbox actually runs, which is the
+layer that keeps an agent from touching anything outside its workspace — worth more here, since a
+Discord channel lets anyone in the server put text in front of the agent. Revisit if
+openclaw/openclaw#83018 lands: disabling the inner sandbox properly would let both flags go.
+
+---
+
 ---
 
 ## General rules
