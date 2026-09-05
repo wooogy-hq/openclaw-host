@@ -299,3 +299,44 @@ describe("mergeOpenclawConfig", () => {
     }
   });
 });
+
+describe("discord channel (opt-in second channel)", () => {
+  const base = {
+    DATA_BUCKET: "b",
+    USER_ID: "u",
+    TELEGRAM_BOT_TOKEN: "t",
+  };
+
+  it("emits no discord channel when DISCORD_BOT_TOKEN is unset", () => {
+    const cfg = loadConfig(base);
+    expect(cfg.discord).toBeUndefined();
+    const obj = buildOpenclawConfig(cfg);
+    expect(Object.keys(obj.channels as object)).toEqual(["telegram"]);
+  });
+
+  it("emits discord from env so it survives the per-boot channels rewrite", () => {
+    const cfg = loadConfig({ ...base, DISCORD_BOT_TOKEN: "d", DISCORD_ALLOW_FROM: "42" });
+    const discord = (buildOpenclawConfig(cfg).channels as any).discord;
+    expect(discord).toEqual({
+      enabled: true,
+      dmPolicy: "allowlist",
+      allowFrom: ["42"],
+      guilds: { "*": { requireMention: true } },
+      streaming: { mode: "off" },
+    });
+  });
+
+  it("leaves the telegram channel untouched when discord is added", () => {
+    const withDiscord = buildOpenclawConfig(
+      loadConfig({ ...base, DISCORD_BOT_TOKEN: "d", DISCORD_ALLOW_FROM: "42" }),
+    );
+    const withoutDiscord = buildOpenclawConfig(loadConfig(base));
+    expect((withDiscord.channels as any).telegram).toEqual(
+      (withoutDiscord.channels as any).telegram,
+    );
+  });
+
+  it("rejects an allowlist policy with no ids, like telegram does", () => {
+    expect(() => loadConfig({ ...base, DISCORD_BOT_TOKEN: "d" })).toThrow(/DISCORD_ALLOW_FROM/);
+  });
+});

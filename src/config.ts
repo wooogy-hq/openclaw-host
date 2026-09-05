@@ -75,6 +75,15 @@ export interface TelegramConfig {
   allowFrom: string[];
 }
 
+/** Optional second channel. Same shape as Telegram — the Discord channel plugin
+ *  reads the same dmPolicy/allowFrom/streaming keys, with `guilds` where
+ *  Telegram has `groups`. Disabled unless DISCORD_BOT_TOKEN is set. */
+export interface DiscordConfig {
+  enabled: boolean;
+  dmPolicy: DmPolicy;
+  allowFrom: string[];
+}
+
 export interface HostConfig {
   dataBucket: string;
   userId: string;
@@ -100,6 +109,11 @@ export interface HostConfig {
    *  RESTORE_ON_START — with both off, S3 is not touched at all. */
   backupEnabled: boolean;
   telegram: TelegramConfig;
+  /** Present only when DISCORD_BOT_TOKEN is set. openclaw.json's `channels` key
+   *  is regenerated from env on every boot, so a Discord account added at
+   *  runtime with `openclaw channels add` would be wiped by the next restart —
+   *  it has to come from here to survive. */
+  discord?: DiscordConfig;
   provider: ProviderConfig;
   /** Default model reasoning effort when a session/message does not override it. */
   thinkingDefault?: ThinkingLevel;
@@ -135,6 +149,33 @@ function thinkingEnv(env: Env): ThinkingLevel | undefined {
   );
 }
 
+/**
+ * Discord is opt-in: absent DISCORD_BOT_TOKEN, no `channels.discord` is emitted
+ * and the existing Telegram-only setup is untouched. Defaults to an allowlist so
+ * an unconfigured bot invite cannot let strangers DM the agent.
+ */
+function loadDiscordConfig(env: Env): DiscordConfig | undefined {
+  if (!env.DISCORD_BOT_TOKEN) return undefined;
+
+  const dmPolicy = (env.DISCORD_DM_POLICY ?? "allowlist") as DmPolicy;
+  if (!VALID_DM_POLICIES.includes(dmPolicy)) {
+    throw new Error(
+      `Invalid DISCORD_DM_POLICY: '${dmPolicy}'. Valid: ${VALID_DM_POLICIES.join(", ")}`,
+    );
+  }
+
+  const allowFrom = (env.DISCORD_ALLOW_FROM ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (dmPolicy === "allowlist" && allowFrom.length === 0) {
+    throw new Error("DISCORD_DM_POLICY=allowlist requires a non-empty DISCORD_ALLOW_FROM");
+  }
+
+  return { enabled: true, dmPolicy, allowFrom };
+}
+
 export function loadConfig(env: Env = process.env): HostConfig {
   const dataBucket = required(env, "DATA_BUCKET");
   const userId = required(env, "USER_ID");
@@ -158,6 +199,8 @@ export function loadConfig(env: Env = process.env): HostConfig {
     throw new Error("TELEGRAM_DM_POLICY=allowlist requires a non-empty TELEGRAM_ALLOW_FROM");
   }
 
+  const discord = loadDiscordConfig(env);
+
   const awsRegion = env.AWS_REGION;
 
   return {
@@ -173,6 +216,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
     backupEnabled: booleanEnv(env, "BACKUP_ENABLED", true),
     telegram: { enabled: true, dmPolicy, allowFrom },
+    ...(discord ? { discord } : {}),
     thinkingDefault: thinkingEnv(env),
     dynamicAgentDefaults: booleanEnv(env, "DYNAMIC_AGENT_DEFAULTS", false),
     provider: resolveProviderConfig({
@@ -208,6 +252,22 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
     telegram.allowFrom = cfg.telegram.allowFrom;
   }
 
+  const channels: Record<string, unknown> = { telegram };
+  if (cfg.discord) {
+    // `guilds` is Discord's `groups`; requireMention keeps the bot quiet in busy
+    // servers. Streaming is off for the same reason as Telegram (see above).
+    const discord: Record<string, unknown> = {
+      enabled: cfg.discord.enabled,
+      dmPolicy: cfg.discord.dmPolicy,
+      guilds: { "*": { requireMention: true } },
+      streaming: { mode: "off" },
+    };
+    if (cfg.discord.dmPolicy === "allowlist") {
+      discord.allowFrom = cfg.discord.allowFrom;
+    }
+    channels.discord = discord;
+  }
+
   // gateway.auth.token must be present (and stable) or the agent + `openclaw cron`
   // can't open their gateway websocket ("requires credentials"). The gateway is
   // loopback-bound; this token is shared by the local clients via this same file.
@@ -218,7 +278,7 @@ export function buildOpenclawConfig(cfg: HostConfig): Record<string, unknown> {
 
   const result: Record<string, unknown> = {
     gateway,
-    channels: { telegram },
+    channels,
     agents: {
       defaults: {
         model: { primary: `${cfg.provider.openclawProvider}/${cfg.provider.defaultModel}` },
