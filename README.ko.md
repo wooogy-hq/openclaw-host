@@ -182,6 +182,14 @@ openclaw agents bindings
 에이전트의 `MEMORY.md` / `IDENTITY.md`를 읽지 못한다. 반면 auth 프로필은 **상속**되므로
 새 에이전트에 재로그인이 필요 없다.
 
+**GitHub 자격증명도 에이전트별로 격리된다.** 각 에이전트의 워크스페이스 트리가 자기 토큰에
+대응되며, 라우팅은 [`bin/git-credential-oc`](bin/git-credential-oc)가 하고 git은
+`/etc/gitconfig`를 통해 이를 호출한다. REST 호출엔 그런 훅이 없으므로 같은 규칙을 적용하는
+[`bin/gh-api`](bin/gh-api)를 쓴다. 라우터가 **요청 경로가 아니라 작업 디렉터리**를 보기
+때문에, 어떤 에이전트도 다른 org 경로를 요청하는 방식으로 남의 토큰을 얻을 수 없다.
+`$GITHUB_TOKEN`은 기본 스코프 하나만 담고 있고, 보이지 않는 org는 403이 아니라 **404**를
+준다 — 토큰을 의심하기 전에 [`docs/troubleshooting.md`](docs/troubleshooting.md)를 볼 것.
+
 ## 프로바이더 & 모델
 
 `AI_PROVIDER`가 두뇌를 고른다: `anthropic`, `bedrock`, `deepseek`, `openai`, 또는 그 외

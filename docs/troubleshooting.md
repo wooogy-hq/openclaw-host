@@ -193,32 +193,57 @@ lives in the image layer and disappears on the next rebuild.
 
 ## The agent gets 404 on a private org repo
 
-A fine-grained PAT only sees an organisation that either owns the token or has approved it. A token
-issued under your personal account returns **404** (not 403) for org repos — the repo is invisible,
-not forbidden. Issue a new one with **Resource owner = the org**.
+A fine-grained PAT only sees an organisation that either owns the token or has
+approved it. A token issued under your personal account returns **404** (not
+403) for org repos — the repo is invisible, not forbidden. Issue a new one with
+**Resource owner = the org**.
 
-Tokens are then routed per path by `/state/bin/git-credential-oc`, which git reaches through
-`credential.https://github.com.helper` in `/state/.gitconfig` (with `usehttppath=true`, so git
-passes `path=<org>/<repo>.git`):
+But before suspecting the token: **check which path made the call.** Credentials
+are routed **per agent**, and only git gets routed automatically.
+
+| caller | how it authenticates |
+|---|---|
+| `git` (clone/fetch/push) | `/usr/local/bin/git-credential-oc`, wired into `/etc/gitconfig` |
+| REST API | `/usr/local/bin/gh-api` — same routing, applied by hand |
+| anything using `$GITHUB_TOKEN` directly | the default token only — **this is the 404 trap** |
+
+`$GITHUB_TOKEN` holds one token (the default scope). An API call that uses it
+against another org 404s, which reads like a stale or wrong token and sends you
+checking fingerprints instead of call paths. If `git fetch` works in that repo,
+the org's token is fine and the problem is the caller.
+
+### How the routing decides
+
+OpenClaw has no per-agent env injection (`agents.list[]` has no `env` key), but
+each agent owns a workspace tree and git invokes the helper with **cwd inside
+the repo** — so the working directory identifies the agent:
 
 ```
-the-form/*   -> /state/.gh-token-theform
-saedungji/*  -> /state/.gh-token-saju
-*            -> /state/.gh-token          (wooogy-hq)
+/data/workspace/*       -> main         -> /state/.gh-token
+/data/workspace-work/*  -> work         -> /state/.gh-token-saju
+anything else           ->              -> /state/.gh-token
 ```
 
-Two traps when adding an org:
+The direction is the point: the non-default token is reachable **only** from its
+own agent's tree. An earlier version routed on the *requested repo path*, which
+meant any agent could obtain any org's token just by asking for that path — a
+convenience, not an isolation. Verify a change to this with fingerprints from
+both trees, not just the one you expect to work:
 
-- A repo-local `credential.helper` does **not** win. It is a *generic* helper, and the URL-scoped
-  `credential.https://github.com.helper` above is applied after it. Add the org to the router
-  instead.
-- `git clone` from the host still hits the global `credential.helper=store`, which answers first
-  with the wrong token (`Write access to repository not granted`, 403). Reset the list with an
-  empty value before overriding: `git -c credential.helper= -c credential.helper="store --file=…"`.
+```
+docker exec -u 1000:1000 -w <dir> openclaw-host sh -c \
+  'printf "protocol=https\nhost=github.com\n\n" | git-credential-oc get' | sed -n s/^password=//p
+```
 
-`git-credential-oc` lives only in `/state/bin/` — it is not in this repo and not created by the
-Dockerfile. Losing the state mount loses every non-default org's git auth with no record of how to
-rebuild it.
+### Two ways a helper you just set gets silently overridden
+
+- A repo-local `credential.helper` does **not** win over the URL-scoped
+  `credential.https://github.com.helper`, which is applied after it. Change the
+  router instead of adding a local helper.
+- `git clone` on the host still hits the global `credential.helper=store`, which
+  answers first with the wrong token (`Write access to repository not granted`,
+  403). Reset the list with an empty value before overriding:
+  `git -c credential.helper= -c credential.helper="store --file=…"`.
 
 ## Agent shell tool fails: `bwrap: No permissions to create a new namespace`
 

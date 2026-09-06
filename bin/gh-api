@@ -1,0 +1,29 @@
+#!/bin/sh
+# GitHub REST API with the same per-AGENT routing as git-credential-oc.
+#
+# git routes itself (see /state/bin/git-credential-oc); a plain API call has no
+# such hook and would otherwise fall back to one shared token. An org a token
+# cannot see answers 404, not 403 — a missing permission looks exactly like a
+# missing repo, which is how an afternoon gets spent on the wrong suspect.
+#
+#   gh-api /repos/saedungji/saju.homes/pulls/225
+#   gh-api /repos/saedungji/saju.homes/issues -X POST -d '{"title":"..."}'
+#
+# Routing follows the working directory, so run it from inside your workspace.
+# Arguments after the path are passed to curl untouched.
+set -eu
+
+[ $# -ge 1 ] || { echo "usage: gh-api /repos/<owner>/<repo>[/...] [curl args...]" >&2; exit 2; }
+path=$1; shift
+
+case "$PWD/" in
+  /data/workspace-work/*) tok=$(cat /state/.gh-token-saju 2>/dev/null); who=saedungji ;;
+  *)                      tok=$(cat /state/.gh-token 2>/dev/null);      who=wooogy-hq ;;
+esac
+[ -n "$tok" ] || { echo "gh-api: no token for the $who scope" >&2; exit 1; }
+
+exec curl -sS \
+  -H "Authorization: Bearer $tok" \
+  -H "Accept: application/vnd.github+json" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  "$@" "https://api.github.com${path}"

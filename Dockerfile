@@ -80,8 +80,16 @@ RUN mkdir -p /data/workspace /state /skills && chown -R oc:oc /data /state /skil
 # index.ts from $GITHUB_TOKEN). NOT git's `store` helper — on a failed auth git
 # `reject`s and erases the store file, silently breaking all later pushes; a
 # file the helper `cat`s can't be wiped that way and ignores the scrubbed env.
-RUN git config --system credential."https://github.com".helper \
-      '!f(){ echo username=x-access-token; echo "password=$(cat /state/.gh-token)"; }; f' && \
+# The helper routes per AGENT: OpenClaw has no per-agent env injection, but each
+# agent owns a workspace tree and git runs the helper with cwd inside the repo,
+# so the working directory identifies the caller. That direction matters — a
+# path-based router would hand any agent any org's token if it asked for that
+# path; this one cannot. gh-api applies the same routing to REST calls, which
+# have no credential-helper hook of their own.
+COPY bin/git-credential-oc bin/gh-api /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/git-credential-oc /usr/local/bin/gh-api && \
+    git config --system credential."https://github.com".helper \
+      '!/usr/local/bin/git-credential-oc' && \
     git config --system url."https://github.com/".insteadOf "git@github.com:"
 
 USER oc
