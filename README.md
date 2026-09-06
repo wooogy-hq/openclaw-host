@@ -198,6 +198,15 @@ Isolation is real — a second agent starts from a blank workspace template and
 cannot read the first one's `MEMORY.md` / `IDENTITY.md`. Auth profiles *are*
 inherited, so a new agent needs no second login.
 
+**GitHub credentials are isolated per agent too.** Each agent's workspace tree
+maps to its own token via [`bin/git-credential-oc`](bin/git-credential-oc), which
+git reaches through `/etc/gitconfig`; REST calls have no such hook, so use
+[`bin/gh-api`](bin/gh-api), which applies the same routing. An agent cannot
+obtain another agent's token by asking for that org's repo path — the router
+reads the working directory, not the request. `$GITHUB_TOKEN` holds the default
+scope only, and an org it cannot see answers 404, not 403; see
+[`docs/troubleshooting.md`](docs/troubleshooting.md) before blaming the token.
+
 ## Provider & model
 
 `AI_PROVIDER` picks the brain: `anthropic`, `bedrock`, `deepseek`, `openai`, or
