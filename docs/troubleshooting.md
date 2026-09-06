@@ -205,12 +205,24 @@ are routed **per agent**, and only git gets routed automatically.
 |---|---|
 | `git` (clone/fetch/push) | `/usr/local/bin/git-credential-oc`, wired into `/etc/gitconfig` |
 | REST API | `/usr/local/bin/gh-api` — same routing, applied by hand |
-| anything using `$GITHUB_TOKEN` directly | the default token only — **this is the 404 trap** |
+| `$GITHUB_TOKEN` directly | `/etc/profile.d/10-github-token.sh` re-exports it per agent |
 
-`$GITHUB_TOKEN` holds one token (the default scope). An API call that uses it
-against another org 404s, which reads like a stale or wrong token and sends you
-checking fingerprints instead of call paths. If `git fetch` works in that repo,
-the org's token is fine and the problem is the caller.
+All three read the same signal (the working directory) and must stay in step.
+The third exists because agents reach for `$GITHUB_TOKEN` by reflex — it is what
+every snippet and Actions example uses — and documenting `gh-api` did not stop
+them. An agent that used the raw variable got the default token, 404ed on another
+org, and reported that *its token had never been injected*: the 404 is
+indistinguishable from a stale credential, so the diagnosis lands on the wrong
+suspect. Making the reflex correct was more reliable than asking for a different
+habit.
+
+It works because OpenClaw runs every shell tool call as `bash -lc`, and a login
+shell sources `/etc/profile.d/*` with `PWD` already set to the agent's working
+directory. If that ever changes — a tool call that is not a login shell — the
+variable silently reverts to the default token and the 404s return.
+
+If `git fetch` works in a repo, the org's token is fine and the problem is the
+caller.
 
 ### How the routing decides
 

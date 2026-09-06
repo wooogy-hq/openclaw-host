@@ -87,7 +87,9 @@ RUN mkdir -p /data/workspace /state /skills && chown -R oc:oc /data /state /skil
 # path; this one cannot. gh-api applies the same routing to REST calls, which
 # have no credential-helper hook of their own.
 COPY bin/git-credential-oc bin/gh-api /usr/local/bin/
+COPY bin/profile-github-token.sh /etc/profile.d/10-github-token.sh
 RUN chmod 0755 /usr/local/bin/git-credential-oc /usr/local/bin/gh-api && \
+    chmod 0644 /etc/profile.d/10-github-token.sh && \
     git config --system credential."https://github.com".helper \
       '!/usr/local/bin/git-credential-oc' && \
     git config --system url."https://github.com/".insteadOf "git@github.com:"
