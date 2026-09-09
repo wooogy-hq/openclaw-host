@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { HostConfig } from "./config.js";
 import type { SyncParams } from "./s3-sync.js";
 import { workspacePrefix, sessionsPrefix, agentsPrefix } from "./s3-contract.js";
+import { capabilitiesFor, type Capabilities } from "./openclaw-compat.js";
 
 export interface SupervisorLike {
   start(): void;
@@ -24,6 +25,9 @@ export interface HostDeps {
   /** Agent ids that have a local session dir. Injected for tests; defaults to a
    *  scan of {stateDir}/agents. */
   listAgentIds?: (stateDir: string) => string[];
+  /** What the installed gateway does. Defaults to the pre-2026.8.1 shape, which
+   *  is where this host's S3 layout came from. */
+  capabilities?: Capabilities;
 }
 
 /**
@@ -47,13 +51,30 @@ function scanAgentIds(stateDir: string): string[] {
   }
 }
 
-/** Backup pairs: the workspace plus one session dir per existing agent. */
+/**
+ * Backup pairs: the workspace plus one session dir per existing agent.
+ *
+ * From 2026.8.1 the session dirs stop being the transcript. OpenClaw moves
+ * conversations into `agents/<id>/agent/openclaw-agent.sqlite` and leaves the
+ * `.jsonl` behind as exports and orphans — on this host, 18,223 of them against
+ * 6 live sessions. Copying that directory would look like a working backup and
+ * restore nothing, which is the failure this host already shipped once against a
+ * dead `default` agent.
+ *
+ * The obvious repair — back up `agent/` too — is worse: that one file also holds
+ * the provider OAuth store, so it would push refresh credentials into S3. There
+ * is no file-level split, so this returns the workspace alone and startup says
+ * why. `openclaw backup sqlite` is the tool that can separate them.
+ */
 function backupTargets(
   cfg: HostConfig,
   agentIds: string[],
+  caps: Capabilities,
 ): Array<Pick<SyncParams, "prefix" | "localPath">> {
+  const workspace = { prefix: workspacePrefix(cfg.userId), localPath: cfg.workspaceDir };
+  if (caps.sessionsInSqlite) return [workspace];
   return [
-    { prefix: workspacePrefix(cfg.userId), localPath: cfg.workspaceDir },
+    workspace,
     ...agentIds.map((id) => ({
       prefix: sessionsPrefix(cfg.userId, id),
       localPath: path.join(cfg.stateDir, "agents", id, "sessions"),
@@ -80,7 +101,18 @@ function restoreTargets(cfg: HostConfig): Array<Pick<SyncParams, "prefix" | "loc
  */
 export async function startup(deps: HostDeps): Promise<void> {
   const { config, restore, writeConfigFile, supervisor } = deps;
+  const caps = deps.capabilities ?? capabilitiesFor(undefined);
   const { buildOpenclawConfig } = await import("./config.js");
+
+  // Said once, at the top, rather than per tick: an operator who enabled backups
+  // has to learn here that sessions are no longer part of them.
+  if (config.backupEnabled && caps.sessionsInSqlite) {
+    console.warn(
+      "[openclaw-host] this gateway stores transcripts in SQLite; S3 backup covers the " +
+        "workspace only. Session history needs `openclaw backup sqlite create --agent <id>` " +
+        "— see backupTargets() for why the agent dir cannot be synced as files.",
+    );
+  }
 
   if (config.restoreOnStart) {
     for (const t of restoreTargets(config)) {
@@ -104,8 +136,9 @@ export async function startup(deps: HostDeps): Promise<void> {
 export async function shutdown(deps: HostDeps): Promise<void> {
   const { config, backup } = deps;
   if (!config.backupEnabled) return;
+  const caps = deps.capabilities ?? capabilitiesFor(undefined);
   const agentIds = (deps.listAgentIds ?? scanAgentIds)(config.stateDir);
-  for (const t of backupTargets(config, agentIds)) {
+  for (const t of backupTargets(config, agentIds, caps)) {
     await backup({
       bucket: config.dataBucket,
       prefix: t.prefix,

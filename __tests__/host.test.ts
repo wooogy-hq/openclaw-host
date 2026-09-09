@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { startup, shutdown, type HostDeps } from "../src/host.js";
 import { loadConfig } from "../src/config.js";
+import { capabilitiesFor } from "../src/openclaw-compat.js";
 
 function makeDeps(overrides: Partial<HostDeps> = {}): HostDeps {
   const config = loadConfig({
@@ -123,5 +124,50 @@ describe("shutdown", () => {
 
     expect(deps.backup).toHaveBeenCalledTimes(1);
     expect(deps.backup).toHaveBeenCalledWith(expect.objectContaining({ prefix: "workspaces/u1" }));
+  });
+});
+
+describe("backup targets follow the gateway's storage layout", () => {
+  it("syncs a session dir per agent on pre-2026.8.1 gateways", async () => {
+    const deps = makeDeps({
+      config: { ...makeDeps().config, backupEnabled: true },
+      capabilities: capabilitiesFor([2026, 7, 1]),
+    });
+    await shutdown(deps);
+
+    const prefixes = (deps.backup as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([p]) => p.prefix as string,
+    );
+    expect(prefixes).toEqual(["workspaces/u1", "sessions/u1/agents/main/sessions"]);
+  });
+
+  it("stops syncing session dirs once transcripts live in SQLite", async () => {
+    // From 2026.8.1 those .jsonl files are exports and orphans; the live
+    // transcript is in agents/<id>/agent/openclaw-agent.sqlite, which also holds
+    // the OAuth store and so must not be pushed to S3. Copying the old path
+    // would look like a backup and restore nothing.
+    const deps = makeDeps({
+      config: { ...makeDeps().config, backupEnabled: true },
+      capabilities: capabilitiesFor([2026, 9, 2]),
+    });
+    await shutdown(deps);
+
+    const prefixes = (deps.backup as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([p]) => p.prefix as string,
+    );
+    expect(prefixes).toEqual(["workspaces/u1"]);
+    expect(prefixes.some((p) => p.includes("agent"))).toBe(false);
+  });
+
+  it("says so at startup instead of quietly shrinking the backup", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deps = makeDeps({
+      config: { ...makeDeps().config, backupEnabled: true },
+      capabilities: capabilitiesFor([2026, 9, 2]),
+    });
+    await startup(deps);
+
+    expect(warn.mock.calls.flat().join(" ")).toMatch(/backup sqlite/);
+    warn.mockRestore();
   });
 });

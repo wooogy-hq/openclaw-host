@@ -16,6 +16,18 @@ RUN apt-get update && \
 # OpenClaw CLI on PATH.
 # 2026.7.1-2 includes the auth-store locking fixes required by the long-running
 # gateway's native OpenAI Codex OAuth path.
+#
+# This ARG is a real knob, not a fixed target. src/openclaw-compat.ts reads
+# `openclaw --version` at boot and emits the config shape that version accepts,
+# so the same image works against a pre-2026.8.1 gateway and a 2026.8.1+ one
+# ("OpenClaw 2.0"), and a rollback between them is a rebuild rather than a
+# hand-repaired config. See docs/versions.md before changing it.
+#
+# Channel and provider plugins (discord, codex, deepseek) are NOT baked in:
+# `openclaw plugins install` writes to $OPENCLAW_STATE_DIR/npm/projects, which is
+# a volume, so a build-time install would be discarded. They persist across a
+# version bump on their own; index.ts runs `openclaw config validate` after
+# writing the config so a genuinely missing one is named at boot.
 ARG OPENCLAW_VERSION=2026.7.1-2
 RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 
