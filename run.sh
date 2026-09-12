@@ -25,7 +25,12 @@ HOST_SKILLS=${HOST_SKILLS:-$HOME/openclaw-skills}
 HOST_UID=${HOST_UID:-$(id -u)}
 HOST_GID=${HOST_GID:-$(id -g)}
 
-docker build -t openclaw-host .
+# Build args come from .env too, so one file decides what the image contains.
+docker build -t openclaw-host \
+  --build-arg "WITH_GITOPS_TOOLS=${WITH_GITOPS_TOOLS:-0}" \
+  ${OPENCLAW_VERSION:+--build-arg "OPENCLAW_VERSION=$OPENCLAW_VERSION"} \
+  ${AGENT_SKILLS_REF:+--build-arg "AGENT_SKILLS_REF=$AGENT_SKILLS_REF"} \
+  .
 mkdir -p "$HOST_WORKSPACE" "$HOST_STATE" "$HOST_SKILLS"
 
 mounts=(

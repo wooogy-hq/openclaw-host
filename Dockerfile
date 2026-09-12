@@ -45,8 +45,10 @@ RUN chmod +x /usr/local/bin/code-agent
 # plus the underlying skills. Baked into the image rather than `/plugin install`
 # because code-agent runs Claude in non-interactive `-p` mode (no interactive
 # /plugin REPL) and ~/.claude is ephemeral; code-agent loads it via --plugin-dir.
-# Pin AGENT_SKILLS_REF to a tag/commit for reproducible builds.
-ARG AGENT_SKILLS_REF=main
+# Pinned to a tag, not a branch: a branch means two builds of the same commit of
+# THIS repo can ship different agent behaviour, decided by someone else's merge,
+# with nothing here to diff. Bump deliberately.
+ARG AGENT_SKILLS_REF=0.6.9
 RUN git clone --depth 1 --branch ${AGENT_SKILLS_REF} \
       https://github.com/addyosmani/agent-skills /opt/agent-skills && \
     rm -rf /opt/agent-skills/.git
@@ -57,15 +59,25 @@ RUN git clone --depth 1 --branch ${AGENT_SKILLS_REF} \
 COPY bin/install-skill /usr/local/bin/install-skill
 RUN chmod +x /usr/local/bin/install-skill
 
-# GitOps validation tools — so the agent can self-validate manifests BEFORE
-# committing to a GitOps repo (helm lint + kubeconform schema + conftest
-# policy). Client-side only; no cluster access needed.
+# GitOps validation tools — so the agent can self-validate Kubernetes manifests
+# BEFORE committing them (helm lint + kubeconform schema + conftest policy).
+# Client-side only; no cluster access needed.
+#
+# Off by default: most deployments do not run Kubernetes, and this pulls three
+# binaries over the network on every build for them. Turn it on with
+# `--build-arg WITH_GITOPS_TOOLS=1`, or WITH_GITOPS_TOOLS=1 in .env, which
+# run.sh forwards.
+ARG WITH_GITOPS_TOOLS=0
 RUN set -eux; \
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; \
-    curl -fsSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
-      | tar xz -C /usr/local/bin kubeconform; \
-    curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz \
-      | tar xz -C /usr/local/bin conftest
+    if [ "$WITH_GITOPS_TOOLS" = "1" ]; then \
+      curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; \
+      curl -fsSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+        | tar xz -C /usr/local/bin kubeconform; \
+      curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz \
+        | tar xz -C /usr/local/bin conftest; \
+    else \
+      echo "skipping GitOps tools (WITH_GITOPS_TOOLS=$WITH_GITOPS_TOOLS)"; \
+    fi
 
 # Non-root user.
 RUN groupadd -r oc && useradd -r -g oc -m oc
