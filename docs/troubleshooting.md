@@ -322,3 +322,35 @@ openclaw/openclaw#83018 lands: disabling the inner sandbox properly would let bo
 - Diagnosing telegram polling by hand with `curl …/getUpdates` **crashes** the running ingress
   (`Conflict: terminated by other getUpdates`) — only one consumer may poll a bot token. Prefer
   reading logs/state over `curl`.
+
+## The backup that cost $20/day
+
+**Symptom.** An AWS Cost Anomaly alert. S3 request charges climbing daily with
+no change in what the agent was doing.
+
+**What was happening.** The periodic backup re-uploaded the *entire* workspace
+every cycle with no change detection. That is survivable while the workspace is
+a handful of Markdown files. It stops being survivable the moment the agent
+clones repositories into it: the workspace reached ~32,000 files, **~85% of them
+`node_modules/` and `.git/`**, and the backup never finished before the next one
+started. **~4.5M PUT/LIST requests per day, ~$20/day**, growing with every clone.
+
+Note what the cost was *not*: storage. S3 storage for a few GB is cents. The
+bill was **requests** — Tier 1 pricing on millions of tiny objects, which is the
+failure mode a naive recursive sync walks straight into.
+
+**Fix** (both in [`src/s3-sync.ts`](../src/s3-sync.ts)):
+
+1. **Skip what is reconstructible.** `node_modules`, `.git`, build caches — and
+   any *nested git repository*. A clone lives on its remote; backing it up is
+   paying to duplicate something GitHub already holds. Back up the agent's own
+   state, not everything that happens to sit next to it.
+2. **Go incremental.** A size+mtime manifest means an idle cycle issues **zero**
+   PUTs, instead of re-uploading a snapshot identical to the last one.
+
+Result: ~4.5M → ~660k → near-zero requests/day.
+
+**If you fork this:** the trap is not "backups are expensive." It is that an
+agent's workspace grows unattended, in a direction you did not choose, between
+one backup cycle and the next. Whatever you sync, exclude the reconstructible
+parts before the agent has a chance to fill them.
