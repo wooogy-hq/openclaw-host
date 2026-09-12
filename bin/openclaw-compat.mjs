@@ -24,14 +24,31 @@ try {
   process.exit(2);
 }
 
+// Hand-rolled, but explicitly: `indexOf("--version")` returns -1 when the flag
+// is absent, and args[-1 + 1] is args[0] — the config path, silently used as a
+// version string. It parses to nothing, capabilities fall back to the older
+// shape, and the file is rewritten for the wrong gateway without a word.
 const args = process.argv.slice(2);
-const file = args.find((a) => !a.startsWith("--"));
+let file;
+let pinned;
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "--version") {
+    pinned = args[++i];
+  } else if (args[i] === "--write") {
+    continue;
+  } else if (args[i].startsWith("--")) {
+    console.error(`unknown flag: ${args[i]}`);
+    process.exit(2);
+  } else if (file === undefined) {
+    file = args[i];
+  }
+}
+const write = args.includes("--write");
+
 if (!file) {
   console.error("usage: openclaw-compat.mjs <openclaw.json> [--version X.Y.Z] [--write]");
   process.exit(2);
 }
-const write = args.includes("--write");
-const pinned = args[args.indexOf("--version") + 1];
 
 let versionText = pinned;
 if (!versionText) {
@@ -43,6 +60,13 @@ if (!versionText) {
   }
 }
 const version = compat.parseVersion(versionText);
+// The host may fall back to the older shape on an unreadable version — it has a
+// gateway to keep alive. A CLI run has no such excuse: guessing here rewrites
+// someone's config for a gateway they did not name.
+if (!version) {
+  console.error(`could not read a version from: ${versionText.trim()}`);
+  process.exit(2);
+}
 const caps = compat.capabilitiesFor(version);
 
 const config = JSON.parse(readFileSync(file, "utf-8"));
