@@ -58,7 +58,7 @@ COPY bin/install-skill /usr/local/bin/install-skill
 RUN chmod +x /usr/local/bin/install-skill
 
 # GitOps validation tools — so the agent can self-validate manifests BEFORE
-# committing to wooogy-hq/infra (helm lint + kubeconform schema + conftest
+# committing to a GitOps repo (helm lint + kubeconform schema + conftest
 # policy). Client-side only; no cluster access needed.
 RUN set -eux; \
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; \

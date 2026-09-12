@@ -23,7 +23,7 @@ services:
     volumes:
       # settings.yml MUST enable `search.formats: [html, json]` (the tool hits
       # /search?format=json). Copy examples/sidecars/searxng-settings.yml here.
-      - ${HOST_SEARXNG:-/home/wooogy/searxng}:/etc/searxng:rw
+      - ${HOST_SEARXNG:-${HOME}/searxng}:/etc/searxng:rw
 
   # Headless Chromium + Playwright driven over HTTP (POST /exec), with a live
   # read-only viewer at `/`. The agent drives it; a human can watch.

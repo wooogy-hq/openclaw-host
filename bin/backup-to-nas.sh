@@ -8,8 +8,11 @@
 # protect against losing the disk. For that, copy a snapshot off the machine.
 set -euo pipefail
 
-SRC_STATE=${SRC_STATE:-/home/wooogy/openclaw-state}
-DEST=${DEST:-/home/wooogy/nas/openclaw-backup}
+# Point these at your own layout. WORKSPACES is space-separated; leave it empty
+# to snapshot state only.
+SRC_STATE=${SRC_STATE:-$HOME/openclaw-state}
+DEST=${DEST:-$HOME/nas/openclaw-backup}
+WORKSPACES=${WORKSPACES:-$HOME/openclaw-workspace}
 KEEP=${KEEP:-5}
 
 stamp=$(date +%Y-%m-%dT%H-%M-%S)
@@ -30,7 +33,7 @@ rsync -a --delete "${link[@]}" \
   --exclude=google-analytics --exclude=media \
   "$SRC_STATE/" "$DEST/$stamp/state/"
 
-for ws in /home/wooogy/openclaw-workspace /home/wooogy/openclaw-workspace-work; do
+for ws in $WORKSPACES; do
   [ -d "$ws" ] || continue
   rsync -a --delete "${link[@]}" \
     --exclude=node_modules --exclude=.pnpm-store --exclude=.tmp \

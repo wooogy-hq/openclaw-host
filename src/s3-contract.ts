@@ -1,21 +1,24 @@
 /**
- * S3 layout contract — VENDORED from the serverless-openclaw deployment.
+ * S3 layout contract.
  *
- * These values MUST stay byte-for-byte identical to the serverless side
- * (`@serverless-openclaw/shared`) so that openclaw-host and the serverless
- * stack can share the same bucket and see each other's workspace/session
- * state. Changing any value here without changing it there (or vice versa)
- * silently breaks cross-environment state sharing.
+ * These prefixes are a published shape, not an internal detail: a
+ * `serverless-openclaw` deployment can share the same bucket, and the two sides
+ * only see each other's state while the strings match. Changing one without the
+ * other does not error — it silently splits the state in two, which is the
+ * expensive way to find out.
  *
- * Source of truth on the serverless side:
- *   packages/shared/src/constants.ts
- *     SESSION_S3_PREFIX     = "sessions"
- *     SESSION_DEFAULT_AGENT = "default"
- *   packages/container/src/startup.ts / lambda-agent workspace-sync.ts
- *     workspace prefix      = "workspaces"
- *     gateway port          = 18789
+ * If you are not sharing a bucket with such a deployment, none of this
+ * constrains you. Point DATA_BUCKET at your own bucket, or set
+ * BACKUP_ENABLED=false, and the layout is simply where your own files land.
+ *
+ *   workspaces/{userId}/...                        workspace files
+ *   sessions/{userId}/agents/{agentId}/sessions/   per-agent transcripts
+ *   gateway port                                   18789 (loopback)
+ *
+ * `SESSION_DEFAULT_AGENT` is the one value with an external obligation: the
+ * serverless side writes the `default` agent to that exact path. Host-only
+ * agents get their own prefixes alongside it and are free to be named anything.
  */
-
 /** Top-level prefix for OpenClaw session transcripts. */
 export const SESSION_S3_PREFIX = "sessions";
 

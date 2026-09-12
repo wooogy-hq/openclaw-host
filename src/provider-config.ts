@@ -1,12 +1,10 @@
 /**
- * AI provider resolution — ported from serverless-openclaw
- * (packages/shared/src/provider-config.ts) and extended here to be
- * provider- and model-agnostic with selectable auth (API key vs OAuth).
+ * AI provider resolution — provider- and model-agnostic, with selectable auth.
  *
- * Named providers keep convenient defaults; any other AI_PROVIDER value is
- * treated as a custom OpenAI/Anthropic-compatible backend fully described by
- * env (AI_BASE_URL / AI_OPENCLAW_API / AI_AUTH / AI_MODEL). See
- * docs/superpowers/specs/2026-07-27-provider-agnostic-codex-design.md.
+ * Named providers (anthropic, bedrock, deepseek, openai) carry sensible
+ * defaults. Any other AI_PROVIDER value is treated as a custom
+ * OpenAI/Anthropic-compatible backend described entirely by env:
+ * AI_BASE_URL / AI_OPENCLAW_API / AI_AUTH / AI_MODEL.
  */
 
 /** How the gateway authenticates to the provider. `oauth` = subscription/OAuth

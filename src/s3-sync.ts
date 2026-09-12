@@ -1,8 +1,8 @@
 /**
- * Recursive S3 <-> local filesystem sync — ported from serverless-openclaw
- * (packages/container/src/s3-sync.ts), with two changes:
- *   - the S3 client is injectable (`client`) for testability
- *   - both functions return the number of files transferred
+ * Recursive S3 <-> local filesystem sync.
+ *
+ * The S3 client is injectable (`client`) so the sync can be tested without a
+ * bucket, and both functions return the number of files transferred.
  *
  * Mirror semantics are upload/overwrite only; objects are never deleted.
  */

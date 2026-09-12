@@ -34,12 +34,12 @@ services:
       OPENCLAW_DISABLE_BONJOUR: "1" # no mDNS noise on a server
     volumes:
       # The agent's project files, visible/editable on the host. Also synced to S3.
-      - ${HOST_WORKSPACE:-/home/wooogy/openclaw-workspace}:/data/workspace
+      - ${HOST_WORKSPACE:-${HOME}/openclaw-workspace}:/data/workspace
       # OpenClaw state (sessions/config/cron) + HOME — persisted across restarts.
-      - ${HOST_STATE:-/home/wooogy/openclaw-state}:/state
+      - ${HOST_STATE:-${HOME}/openclaw-state}:/state
       # Agent-installed skill plugins (via `install-skill`) — persisted across
       # restarts AND rebuilds; the whole point of runtime skill installs.
-      - ${HOST_SKILLS:-/home/wooogy/openclaw-skills}:/skills
+      - ${HOST_SKILLS:-${HOME}/openclaw-skills}:/skills
       # AWS credentials — pick ONE:
       #   (a) mount your profile read-only (uncomment), or
       #   (b) set AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in .env, or

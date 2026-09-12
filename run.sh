@@ -1,25 +1,63 @@
 #!/bin/bash
-# Reproducible run for openclaw-host (files-scope, runs as host uid 1000).
+# Reproducible run for openclaw-host (files scope, runs as the host's uid).
+#
+# Paths and uid come from the environment, with defaults under $HOME. The names
+# match docker-compose.yml deliberately: both tools must land on the SAME state,
+# or switching between them silently forks your agent's history.
+#
+#   HOST_WORKSPACE=/srv/oc/ws HOST_STATE=/srv/oc/state bash run.sh
+#
+# Optional extras are opt-in and skipped when unset:
+#   HOST_WORKSPACE_WORK   a second agent's workspace (see "Agents & channels")
+#   HOST_KUBECTL          read-only kubectl binary to bind-mount in
 set -e
 cd "$(dirname "$0")"
+
+[ -f .env ] || { echo "no .env — copy .env.example and fill it in" >&2; exit 1; }
+# docker compose reads .env on its own; do the same here so HOST_* set there
+# applies to both tools. Without this the two disagree about where state lives,
+# which is the one way they must never differ.
+set -a; . ./.env; set +a
+
+HOST_WORKSPACE=${HOST_WORKSPACE:-$HOME/openclaw-workspace}
+HOST_STATE=${HOST_STATE:-$HOME/openclaw-state}
+HOST_SKILLS=${HOST_SKILLS:-$HOME/openclaw-skills}
+HOST_UID=${HOST_UID:-$(id -u)}
+HOST_GID=${HOST_GID:-$(id -g)}
+
 docker build -t openclaw-host .
-mkdir -p /home/wooogy/openclaw-workspace /home/wooogy/openclaw-workspace-work \
-  /home/wooogy/openclaw-state /home/wooogy/openclaw-skills
-# Shared network so the agent can reach sidecar MCP servers (e.g. risk-radar-mcp)
-# by container name. See run-risk-radar-mcp.sh.
+mkdir -p "$HOST_WORKSPACE" "$HOST_STATE" "$HOST_SKILLS"
+
+mounts=(
+  -v "$HOST_WORKSPACE:/data/workspace"
+  -v "$HOST_STATE:/state"
+  -v "$HOST_SKILLS:/skills"
+)
+# A second agent needs its workspace bind-mounted too: /data is root-owned in
+# the image, so an unmounted workspace is unwritable and dies with the container.
+if [ -n "${HOST_WORKSPACE_WORK:-}" ]; then
+  mkdir -p "$HOST_WORKSPACE_WORK"
+  mounts+=(-v "$HOST_WORKSPACE_WORK:/data/workspace-work")
+fi
+# Read-only kubectl, so the agent can `get/describe/logs` to self-verify a
+# deploy but not mutate. Its kubeconfig belongs in the state mount at
+# /state/.kube/config; scope the token to a view-only ClusterRole.
+if [ -n "${HOST_KUBECTL:-}" ]; then
+  mounts+=(-v "$HOST_KUBECTL:/usr/local/bin/kubectl:ro")
+fi
+
+# Shared network so the agent reaches sidecar MCP servers by container name.
 docker network create oc-net 2>/dev/null || true
-docker stop -t 150 openclaw-host 2>/dev/null || true; docker rm openclaw-host 2>/dev/null || true
+docker stop -t 150 openclaw-host 2>/dev/null || true
+docker rm openclaw-host 2>/dev/null || true
+
 docker run -d --name openclaw-host --restart unless-stopped \
-  --user 1000:1000 \
+  --user "$HOST_UID:$HOST_GID" \
   --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
   --env-file .env \
   -e WORKSPACE_DIR=/data/workspace -e OPENCLAW_STATE_DIR=/state \
   -e OPENCLAW_BIN=openclaw -e OPENCLAW_DISABLE_BONJOUR=1 -e HOME=/state \
-  -v /home/wooogy/openclaw-workspace:/data/workspace \
-  -v /home/wooogy/openclaw-workspace-work:/data/workspace-work \
-  -v /home/wooogy/openclaw-state:/state \
-  -v /home/wooogy/openclaw-skills:/skills \
-  -v /home/wooogy/openclaw-state/bin/kubectl:/usr/local/bin/kubectl:ro \
+  "${mounts[@]}" \
   openclaw-host
 # Codex sandboxes every shell command with bubblewrap, which needs to create a
 # user namespace and remount /. Docker's default seccomp blocks the first and its
@@ -32,12 +70,9 @@ docker run -d --name openclaw-host --restart unless-stopped \
 # vendored bwrap is a musl build with no setuid support.
 # Net effect: the container's syscall/mount confinement is traded for Codex's
 # per-command sandbox, which is what actually constrains an agent taking
-# untrusted input from Discord. Isolation still rests on uid 1000 + the bind
-# mounts below.
-# Read-only kubectl: the binary is bind-mounted above; its kubeconfig lives in the
-# state mount at /state/.kube/config (= $HOME/.kube/config). The token is the
-# cluster SA `kube-system:agent-readonly` (view ClusterRole — read-only, no Secrets).
-# So the agent can `kubectl get/describe/logs` to self-verify deploys, not mutate.
+# untrusted input from a chat channel. Isolation still rests on the unprivileged
+# uid plus the bind mounts above.
+
 # Attach to oc-net in addition to the default bridge (so MCP DNS by name works).
 docker network connect oc-net openclaw-host 2>/dev/null || true
 echo "started. logs: docker logs -f openclaw-host"

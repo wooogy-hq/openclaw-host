@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # The config-shape logic is the part most likely to rot: it encodes what two
+  # specific OpenClaw releases accept, and only a real binary can say whether it
+  # still holds. Runs on a schedule so a new release surfaces here rather than
+  # on someone's gateway at boot.
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Reshape a fixture config for the latest OpenClaw, then let it judge
+        run: |
+          npm install -g openclaw@latest
+          openclaw --version
+          mkdir -p /tmp/state
+          cp __tests__/fixtures/legacy-openclaw.json /tmp/state/openclaw.json
+          node bin/openclaw-compat.mjs /tmp/state/openclaw.json --write
+          OPENCLAW_STATE_DIR=/tmp/state openclaw config validate

@@ -1,0 +1,53 @@
+{
+  "gateway": {
+    "port": 18789,
+    "mode": "local"
+  },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "dmPolicy": "allowlist",
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      },
+      "streaming": {
+        "mode": "off"
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/data/workspace",
+      "model": "openai/gpt-5.6-sol",
+      "models": {
+        "openai/gpt-5.6-sol": {}
+      },
+      "memorySearch": {
+        "enabled": false
+      },
+      "thinkingDefault": "high"
+    },
+    "list": [
+      {
+        "id": "main"
+      },
+      {
+        "id": "work",
+        "name": "work",
+        "workspace": "/data/workspace-work",
+        "groupChat": {
+          "visibleReplies": "message_tool"
+        }
+      }
+    ]
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.7.1-2",
+    "lastTouchedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "plugins": {
+    "bundledDiscovery": "compat"
+  }
+}

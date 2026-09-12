@@ -8,7 +8,7 @@
 # out of ~/.claude/plugins/cache/<mp>/<plugin>/<ver>/skills/ into $EXTRA below.
 set -euo pipefail
 
-HOST=openclaw-home
+HOST=${OPENCLAW_HOST:-openclaw-home}   # ssh target running the gateway
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
@@ -25,14 +25,15 @@ for d in "$HOME"/.claude/skills/*; do
   cp -RL "$d" "$STAGE"/
 done
 
-# 2. hand-picked plugin skills
+# 2. Hand-picked plugin skills. This list is a personal selection — edit it.
+#    Version dirs are globbed so an upgrade does not silently drop a skill.
 EXTRA=(
-  "$HOME/.claude/plugins/cache/ponytail/ponytail/4.8.4/skills"/*
-  "$HOME/.claude/plugins/cache/im-not-ai/humanize-korean/1.5.0/codex/skills/humanize-korean"
+  "$HOME"/.claude/plugins/cache/ponytail/ponytail/*/skills/*
+  "$HOME"/.claude/plugins/cache/im-not-ai/humanize-korean/*/codex/skills/humanize-korean
 )
 for s in brainstorming systematic-debugging writing-plans executing-plans \
          test-driven-development verification-before-completion writing-skills; do
-  EXTRA+=("$HOME/.claude/plugins/cache/claude-plugins-official/superpowers/6.3.0/skills/$s")
+  EXTRA+=("$HOME"/.claude/plugins/cache/claude-plugins-official/superpowers/*/skills/"$s")
 done
 for d in "${EXTRA[@]}"; do [ -d "$d" ] && cp -RL "$d" "$STAGE"/; done
 
