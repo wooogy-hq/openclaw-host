@@ -13,7 +13,7 @@
 [`docs/versions.md`](docs/versions.md) 참고.
 
 > 상태: 홈서버에서 프로덕션 운영 중 — Telegram + Discord, 격리된 에이전트 3개,
-> 테스트 106개 통과. 설계는 [`docs/spec.md`](docs/spec.md).
+> 테스트 111개 통과, CI 그린. 설계는 [`docs/spec.md`](docs/spec.md).
 > 시간을 실제로 잡아먹은 실패들 — 변경 감지 없는 백업이 만든 **하루 $20 S3
 > 청구서** 포함 — 은 [`docs/troubleshooting.md`](docs/troubleshooting.md)에 있다.
 
@@ -27,10 +27,11 @@ bash run.sh               # docker build + graceful stop + docker run
 docker logs -f openclaw-host
 ```
 
-`run.sh`가 워크스페이스·상태·스킬 디렉터리를 바인드 마운트한다. 파일 상단의
-경로를 네 머신에 맞게 고쳐라. [`docker-compose.yml`](docker-compose.yml)은 같은
-컨테이너 이름·마운트·uid를 쓰는 선언형 등가물이라 둘 중 뭘 쓰든 같은 상태에
-붙는다. systemd 유닛은 [`deploy/`](deploy/)에 있다.
+경로·uid·빌드 인자는 전부 `.env`에서 오고 기본값은 `$HOME` 아래다
+(`HOST_WORKSPACE`, `HOST_STATE`, `HOST_SKILLS`, …). `run.sh`와
+[`docker-compose.yml`](docker-compose.yml)이 같은 파일을 읽는 건 의도다 —
+둘이 상태 위치를 다르게 알면 에이전트 히스토리가 갈라진다. systemd 유닛은
+[`deploy/`](deploy/)에 있다.
 
 Docker 없이 돌리려면 `npm install && npm run build && npm start` — `openclaw`
 CLI가 PATH에 있거나 `OPENCLAW_BIN`이 가리키고 있어야 한다.
@@ -139,6 +140,36 @@ S3 동기화는 에이전트별이고 디스크의 에이전트 디렉터리에�
 > 않고는 불가능해진다. 호스트는 그 버전에서 세션 프리픽스를 제외하고 부팅 때 그
 > 사실을 알린다. 대신 `openclaw backup sqlite`를 써라. 자세한 건
 > [`docs/versions.md`](docs/versions.md).
+
+## 대안
+
+OpenClaw는 자체 서비스 설치 명령과 공식 컨테이너를 제공한다. **대부분은 그쪽을
+써야 한다.** 이 표는 본인이 그 "대부분"인지 빨리 판단하라고 있는 것이다.
+
+| | 무엇인가 | 이걸 골라야 할 때 |
+|---|---|---|
+| `openclaw daemon install` | 내장 systemd / launchd / schtasks 서비스 | 한 번 대화형으로 설정하면 그 상태로 쭉 간다. **여기서 시작해라.** |
+| 공식 Docker 이미지 | 업스트림 컨테이너 + compose | 컨테이너는 원하지만 대화형 온보딩은 괜찮다 |
+| Railway 템플릿, Coolify, Elest.io | 웹 마법사가 붙은 원클릭 PaaS | 머신을 직접 소유하고 싶지 않다 |
+| **openclaw-host** | 같은 게이트웨이를 env 기반으로 감싼 컨테이너 | 설정이 env로부터 재현돼야 하고, 에이전트 여럿이 각자 자격증명을 써야 하고, OpenClaw 버전을 오가게 된다 |
+| `serverless-openclaw` | AWS Lambda + API Gateway | 상시 가동 머신 자체를 두고 싶지 않다 |
+
+내장 서비스 대비 얻는 것과 포기하는 것:
+
+| | `daemon` / 공식 Docker | openclaw-host |
+|---|---|---|
+| 상시 가동, 죽으면 재시작 | 됨 | 됨 |
+| 대화형 온보딩 | 한 번 필요 | 없음 — `openclaw.json`이 env의 함수이고 매 부팅 재작성 |
+| 버전 상향·롤백 | `doctor --fix`가 프롬프트를 띄우고, `--non-interactive`는 **하필 컨테이너가 답할 수 없는 설정 모양 마이그레이션을 건너뛴다** | 설치된 버전에 맞춰 양방향 생성 — [`docs/versions.md`](docs/versions.md) |
+| 에이전트별 자격증명 | 모델 auth는 에이전트별, git·GitHub은 아님 | git 토큰이 작업 디렉터리로 라우팅돼 남의 것을 요청해도 못 얻음 |
+| 머신 밖 상태 보관 | `openclaw backup` — git 레포·SQLite 스냅샷 | 그것 + `serverless-openclaw` 배포와 공유 가능한 S3 미러 |
+| 검색·브라우저 사이드카 | 직접 배선 | 선언돼 있고 실패 양상까지 문서화 |
+| 공식 지원 | 있음 | **없음** — 개인 홈서버 산출물, MIT, 무보증 |
+
+**`openclaw daemon install`로 충분하면 이 레포를 쓰지 마라.** 그게 지원되는
+경로이고 너와 업스트림 사이에 낀 게 더 적다. 여기 있을 이유는 하나다 — 설정이
+"한 번 고쳐놓은 파일"이 아니라 **환경의 산출물**이었으면 하고, 버전 상향이
+반나절이 아니라 리빌드 한 번이었으면 할 때.
 
 ## 범위
 

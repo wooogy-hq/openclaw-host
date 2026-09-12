@@ -13,7 +13,7 @@ rollback otherwise lands as a gateway that won't start. This host reads
 `openclaw --version` at boot and adapts. See [`docs/versions.md`](docs/versions.md).
 
 > Status: running in production on a home server — Telegram + Discord, three
-> isolated agents, 106 passing tests. Design in [`docs/spec.md`](docs/spec.md).
+> isolated agents, 111 passing tests, CI green. Design in [`docs/spec.md`](docs/spec.md).
 > The failures that cost real time — including a **$20/day S3 bill** from a
 > backup with no change detection — are in
 > [`docs/troubleshooting.md`](docs/troubleshooting.md).
@@ -28,10 +28,11 @@ bash run.sh               # docker build + graceful stop + docker run
 docker logs -f openclaw-host
 ```
 
-`run.sh` bind-mounts the workspace, state and skills directories; edit the paths
-at the top for your machine. [`docker-compose.yml`](docker-compose.yml) is the
-declarative equivalent (same container name, mounts and uid, so either tool
-attaches to the same state), and [`deploy/`](deploy/) has a systemd unit.
+Paths, uid and build args all come from `.env`, defaulting under `$HOME`
+(`HOST_WORKSPACE`, `HOST_STATE`, `HOST_SKILLS`, …). `run.sh` and
+[`docker-compose.yml`](docker-compose.yml) read the same file on purpose — they
+must agree on where state lives, or switching between them forks your agent's
+history. [`deploy/`](deploy/) has a systemd unit.
 
 To run it outside Docker: `npm install && npm run build && npm start`, with the
 `openclaw` CLI on PATH or `OPENCLAW_BIN` pointing at it.
@@ -143,6 +144,38 @@ purely machine-local.
 > shipping credentials. The host drops session prefixes there and says so at
 > startup; use `openclaw backup sqlite` instead. Details in
 > [`docs/versions.md`](docs/versions.md).
+
+## Alternatives
+
+OpenClaw ships its own service installer and an official container. Most people
+should use those. This table is here so you can tell quickly whether you are one
+of them.
+
+| | What it is | Reach for it when |
+|---|---|---|
+| `openclaw daemon install` | Built-in systemd / launchd / schtasks service | You configure it once, interactively, and it stays that way. **Start here.** |
+| Official Docker image | Upstream container + compose | You want a container and are happy with interactive onboarding |
+| Railway template, Coolify, Elest.io | One-click PaaS with a web setup wizard | You would rather not own the machine |
+| **openclaw-host** | Env-driven container around the same gateway | Config has to be reproducible from env, several agents need separate credentials, and you expect to move across OpenClaw versions |
+| `serverless-openclaw` | AWS Lambda + API Gateway | You want no always-on machine at all |
+
+What this adds over the built-in service, and what it gives up:
+
+| | `daemon` / official Docker | openclaw-host |
+|---|---|---|
+| Always-on, restarts on crash | yes | yes |
+| Interactive onboarding | once, required | never — `openclaw.json` is a function of env, rewritten each boot |
+| OpenClaw version bump or rollback | `doctor --fix` prompts, and `--non-interactive` skips exactly the config-shape migrations a container cannot answer | emitted for the installed version, both directions, [`docs/versions.md`](docs/versions.md) |
+| Per-agent credentials | model auth is per agent; git and GitHub are not | git tokens routed by working directory, so an agent cannot ask for another's |
+| State off the machine | `openclaw backup` — git repos and SQLite snapshots | the same, plus S3 mirroring that a `serverless-openclaw` deployment can share |
+| Search / browser sidecars | wire them yourself | declared, with the failure modes written down |
+| Officially supported | yes | no — one person's home server, MIT, no warranty |
+
+**Skip this** if `openclaw daemon install` already fits. It is the supported
+path and there is less between you and upstream. The reason to be here is that
+you want the config to be an artifact of your environment rather than a file
+you edited once, and you would like a version bump to be a rebuild rather than
+an afternoon.
 
 ## Scope
 
