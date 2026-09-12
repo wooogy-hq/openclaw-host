@@ -355,10 +355,10 @@ describe("discord channel (opt-in second channel)", () => {
       DISCORD_BOT_TOKEN: "d",
       DISCORD_DM_POLICY: "disabled",
       DISCORD_REQUIRE_MENTION: "false",
-      DISCORD_GUILD: "1519825445724360856",
+      DISCORD_GUILD: "000000000000000000",
     });
     const discord = (buildOpenclawConfig(cfg).channels as any).discord;
-    expect(discord.guilds).toEqual({ "1519825445724360856": { requireMention: false } });
+    expect(discord.guilds).toEqual({ "000000000000000000": { requireMention: false } });
   });
 
   it("rejects an allowlist policy with no ids, like telegram does", () => {
