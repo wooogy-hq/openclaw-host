@@ -9,3 +9,7 @@ dist/
 .openclaw/
 data/
 *.identity.json
+
+# Local agent/tooling state, and notes that name this machine.
+.omc/
+ssh-attack-report.md
