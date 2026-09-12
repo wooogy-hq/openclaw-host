@@ -27,9 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Not the version this project targets: OpenClaw 2026.9.x refuses to
+      # install on Node 22 (">=24.16.0 <25 || >=26.1.0"), so testing against
+      # `latest` means running the node it demands. When the Dockerfile's
+      # OPENCLAW_VERSION crosses that line, its base image has to move too.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci && npm run build
       - name: Reshape a fixture config for the latest OpenClaw, then let it judge

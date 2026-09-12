@@ -84,12 +84,30 @@ changes, and `--non-interactive` skips them ("safe migrations only"). A containe
 has no TTY, so an unattended upgrade would boot on a config the new gateway
 rejects.
 
+## The Node floor moved too
+
+OpenClaw 2026.9.x refuses to install on Node 22:
+
+```
+[openclaw] this OpenClaw release requires Node >=24.16.0 <25 || >=26.1.0
+[openclaw] detected Node 22.23.2
+```
+
+The Dockerfile still builds on `node:22-slim`, which is correct for the pinned
+2026.7.1-2 and wrong the moment you bump past it. **Move the base image to
+`node:24-slim` in the same commit as the version bump**, or the build fails at
+`npm install -g openclaw` with an error that reads like a registry problem.
+
+This is the kind of change no config diff reveals — it surfaced when CI tried to
+install `openclaw@latest` and could not.
+
 ## Upgrading
 
 1. Snapshot state — `bin/backup-to-nas.sh`. Read its header first: that copy is
    on the same disk as the original, which covers a bad migration but not a dead
    disk.
-2. Bump `ARG OPENCLAW_VERSION`, rebuild, restart. The config reshapes itself and
+2. Bump `ARG OPENCLAW_VERSION` **and the base image if you are crossing 2026.9**
+   (see above), rebuild, restart. The config reshapes itself and
    the boot log lists every change.
 3. Read the `[openclaw-host] config:` lines. On a fleet, expect
    `agents.defaults.heartbeat.agentId` — 2.0 keeps heartbeats disabled until a
