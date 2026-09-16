@@ -2,111 +2,47 @@
 
 > English: [`README.md`](README.md)
 
-[OpenClaw](https://docs.openclaw.ai)를 내 소유의 머신 — 홈서버, VPS, 남는 PC —
-에서 상시 서비스로 돌린다. 네이티브 채팅 채널, 격리된 다중 에이전트, 선택적 S3
-상태 동기화까지.
-
-다른 데서 구하기 어려운 부분: **설치된 OpenClaw 버전이 받아들이는 설정 모양을
-만들어낸다.** OpenClaw 2026.8.1("2.0")이 그 모양을 바꿨는데 **양방향 모두 하드
-에러**라, 버전을 올리든 되돌리든 게이트웨이가 아예 안 뜨는 상황이 된다. 이
-호스트는 부팅 때 `openclaw --version`을 읽고 거기 맞춘다.
-[`docs/versions.md`](docs/versions.md) 참고.
-
-> 상태: 홈서버에서 프로덕션 운영 중 — Telegram + Discord, 격리된 에이전트 3개,
-> 테스트 111개 통과, CI 그린. 설계는 [`docs/spec.md`](docs/spec.md).
-> 시간을 실제로 잡아먹은 실패들 — 변경 감지 없는 백업이 만든 **하루 $20 S3
-> 청구서** 포함 — 은 [`docs/troubleshooting.md`](docs/troubleshooting.md)에 있다.
-
-## 실행
+[OpenClaw](https://docs.openclaw.ai)를 내가 소유한 하드웨어에서 상시 서비스로
+돌린다. 홈서버, VPS, 서랍 속 남는 노트북. 네이티브 채팅 채널과 격리된 에이전트
+여러 개를 쓰고, OpenClaw가 발밑에서 모양을 바꿔도 계속 뜨는 설정 계층을 얻는다.
 
 ```bash
 git clone git@github.com:wooogy-hq/openclaw-host.git
-cd openclaw-host
-cp .env.example .env      # DATA_BUCKET, USER_ID, TELEGRAM_BOT_TOKEN, AI_PROVIDER, …
-bash run.sh               # docker build + graceful stop + docker run
-docker logs -f openclaw-host
+cd openclaw-host && cp .env.example .env
+bash run.sh
 ```
 
-경로·uid·빌드 인자는 전부 `.env`에서 오고 기본값은 `$HOME` 아래다
-(`HOST_WORKSPACE`, `HOST_STATE`, `HOST_SKILLS`, …). `run.sh`와
-[`docker-compose.yml`](docker-compose.yml)이 같은 파일을 읽는 건 의도다 —
-둘이 상태 위치를 다르게 알면 에이전트 히스토리가 갈라진다. systemd 유닛은
-[`deploy/`](deploy/)에 있다.
+## 왜 만들었나
 
-Docker 없이 돌리려면 `npm install && npm run build && npm start` — `openclaw`
-CLI가 PATH에 있거나 `OPENCLAW_BIN`이 가리키고 있어야 한다.
+OpenClaw는 이미 자기를 서비스로 설치한다. `openclaw daemon install`이 systemd를
+깔아주고 공식 Docker 이미지도 있다. 대부분은 거기서 끝내면 된다. 그걸 써라.
 
-**범위.** 에이전트는 명령을 **컨테이너 안에서** 실행한다. 마운트된 호스트
-디렉터리는 자유롭게 다루지만 호스트의 서비스·패키지·Docker에는 닿지 않는다.
-그걸 열어주는 것(privileged, `--pid=host`, docker 소켓)은 컨테이너를 사실상
-박스의 root로 만드는 일이니, 의도적으로 하거나 아예 하지 마라.
+나를 거기서 밀어낸 건 세 가지다.
 
-## 설정
+**설정이 재현 불가능해졌다.** OpenClaw는 대화형 마법사로 자기를 설정하고
+`openclaw.json`을 쓴다. 그 파일은 시간이 지나며 표류한다. 6주 뒤에 보면 어떤
+키를 내가 골랐고, 어떤 걸 마법사가 추측했고, 어떤 걸 자는 사이 `doctor`가
+고쳤는지 말할 수 없다. 이 호스트는 매 부팅에 그 파일 전체를 환경변수에서
+만들어낸다. 그래서 고칠 것도 백업할 것도 `.env` 하나다.
 
-전부 환경변수다 — [`.env.example`](.env.example) 참고. 시크릿은 env로만 전달되며
-`openclaw.json`에는 **절대** 기록되지 않는다.
+**버전 하나 올렸다가 게이트웨이가 죽었다.** OpenClaw 2026.8.1이 에이전트 로스터
+키를 `agents.list`에서 `agents.entries`로 바꿨다. 양방향 모두 하드 에러다. 구
+게이트웨이는 새 키를 거부하고 새 게이트웨이는 옛 키를 거부한다. 공식 해법인
+`openclaw doctor --fix`는 확인을 요구한다. 컨테이너 안엔 답할 사람이 없고
+`--non-interactive`는 하필 그 마이그레이션을 건너뛴다. 그래서 이 호스트는 부팅
+때 `openclaw --version`을 읽고 그 버전이 받는 모양을 양방향으로 쓴다. 업그레이드는
+리빌드 한 번. 롤백도 리빌드 한 번.
 
-`openclaw.json`은 매 부팅 재생성된다. `gateway`·`channels`·`agents`는 호스트
-소유이고 나머지(`mcp`, `bindings`, `auth`)는 얕은 병합으로 보존된다. 그래서
-`openclaw agents add`는 남지만 `openclaw channels add`는 다음 부팅에 덮이므로
-env로 넣어야 한다.
+**에이전트 둘이 GitHub 토큰 하나를 공유했다.** 텔레그램에 개인 에이전트,
+디스코드에 동료도 말을 거는 업무 에이전트를 돌린다. OpenClaw는 워크스페이스,
+세션, 모델 자격증명을 격리해주지만 git이 보는 토큰은 하나다. 레포 경로를
+요청하면 그 토큰이 닿는 무엇이든 돌아온다. 여기서는 credential helper가 호출자가
+서 있는 작업 디렉터리로 토큰을 고른다. 업무 에이전트가 개인 레포 이름을 대도 못
+읽는다.
 
-> ⚠️ [`Dockerfile`](Dockerfile)의 `OPENCLAW_VERSION` 핀은 의도적이다. 이 레포
-> 히스토리의 모든 버전 상향은 각각 특정 고장을 고친 것이다. 호스트가 버전 간
-> 설정 모양을 맞춰주긴 하지만, 어떤 게이트웨이를 돌릴지 고르는 지점은 여전히 이
-> 핀이다. 올리기 전에 [`docs/versions.md`](docs/versions.md)를 읽어라.
+셋 다 남 얘기라면 `openclaw daemon install`이 너와 업스트림 사이에 낀 게 더 적다.
 
-## 에이전트와 채널
-
-게이트웨이 하나에 **격리된 에이전트 N개** — 각자 워크스페이스·세션 기록·정체성·
-GitHub 토큰을 따로 갖는다. 채널은 바인딩으로 에이전트에 연결된다:
-
-```bash
-openclaw agents add work --workspace /data/workspace-work
-openclaw agents bind --agent work --bind discord   # discord → work; telegram 은 기본 유지
-```
-
-두 가지가 발목을 잡는다. 둘 다 [`docs/troubleshooting.md`](docs/troubleshooting.md)에
-있다 — 바인딩은 게이트웨이를 재시작해야 적용되고, 새 워크스페이스는 `run.sh`에서
-호스트 바인드 마운트여야 한다.
-
-**자격증명도 에이전트별로 격리되는데, 기준은 작업 디렉터리다.** 각 에이전트는
-자기 워크스페이스 트리를 갖고 git은 그 안에서 credential helper를 실행한다. 그래서
-[`bin/git-credential-oc`](bin/git-credential-oc)는 **호출자가 어디 있는지**로
-토큰을 고르지, 무엇을 요청했는지로 고르지 않는다. 다른 에이전트의 조직 경로를
-요청해도 그 토큰을 얻을 수 없다는 뜻이다. REST 호출에는 helper 훅이 없으므로
-[`bin/gh-api`](bin/gh-api)가 같은 라우팅을 적용한다.
-
-## 프로바이더와 모델
-
-`AI_PROVIDER`가 두뇌를 고른다 — `anthropic`, `bedrock`, `deepseek`, `openai`,
-또는 env로 완전히 기술되는 커스텀 OpenAI/Anthropic 호환 엔드포인트
-(`AI_BASE_URL` + `AI_MODEL` + `AI_OPENCLAW_API`). `AI_AUTH`가 인증 방식을 고른다:
-`key`, `oauth`, `aws-sdk`.
-
-`AI_PROVIDER=openai` + `AI_AUTH=oauth`면 토큰당 API 과금 대신 ChatGPT 구독
-프로필로 OpenClaw 내장 Codex app-server를 통해 턴을 실행한다
-(`openclaw models auth login --provider openai --device-code`). 자격증명은
-에이전트별 auth 저장소에 있고 `openclaw.json`에도 S3에도 가지 않는다.
-
-> 한 프로바이더에 프로필이 둘인데 순서를 안 정하면 OpenClaw가 **라운드로빈**
-> 한다 — 할당량이 소진된 쪽까지 포함해서. 고정해라:
-> `openclaw models auth order set --agent <id> --provider openai <profile…>`
-
-## 확장
-
-| | 방법 | 비고 |
-|---|---|---|
-| **스킬** | `install-skill add <owner/repo>` | 영속 `/skills` 볼륨에 설치 — 재빌드·재배포 불필요. `.claude-plugin/plugin.json` 필요. |
-| **원격 MCP** | `openclaw mcp add <name> --transport streamable-http --url <url>` | 로컬에 띄울 게 없다. |
-| **자체 호스팅 MCP** | [`run-mcp-sidecar.sh`](run-mcp-sidecar.sh) | 에이전트 컨테이너는 Node 전용이라 서버는 공유 `oc-net` 네트워크의 사이드카로 돌고 컨테이너 이름으로 접근한다. 예시: [`examples/mcp-sidecars/`](examples/mcp-sidecars/). |
-| **웹 검색** | `SEARXNG_BASE_URL=http://searxng:8080` | 내장 `web_search` 도구의 백엔드. `settings.yml`에 `search.formats: [html, json]`이 켜져 있어야 한다. |
-| **브라우저** | `BROWSER_URL=…` + `BROWSER_PASSWORD` | JS 렌더링 페이지·스크린샷, 사람이 실시간으로 볼 수 있다. 프로필이 named volume에 남아서 **사람이 한 번 로그인하면 에이전트가 그 세션을 재사용**한다 — 계정을 넘겨주는 것보다 낫다. ⚠️ `/exec`는 `oc-net`에서 도달 가능한 임의 코드 실행이다. 게이트 없이 뷰어를 공개하지 마라. |
-
-사이드카는 [`docker-compose.sidecars.yml`](docker-compose.sidecars.yml)에
-선언돼 있다. env 변수를 넣고 `run.sh`를 다시 돌리면 에이전트가 인식한다.
-
-## 아키텍처
+## 구조
 
 ```mermaid
 flowchart TD
@@ -126,64 +62,125 @@ flowchart TD
     GW -.->|"선택 · 에이전트별"| S3[("S3<br/>워크스페이스 + 세션")]
 ```
 
-`src/index.ts`가 생명주기다 — 게이트웨이 버전 감지 → S3 복원 → `openclaw.json`
-작성 → `openclaw gateway run` 감독 → 타이머와 종료 시 백업.
-[`src/openclaw-compat.ts`](src/openclaw-compat.ts)가 버전 차이를,
-[`src/host.ts`](src/host.ts)가 백업 대상을 담당한다.
+[`src/index.ts`](src/index.ts)가 생명주기를 돌린다. 게이트웨이 버전 읽기, S3
+복원, `openclaw.json` 작성, `openclaw gateway run` 감독, 타이머와 종료 시 백업.
+버전 차이는 [`src/openclaw-compat.ts`](src/openclaw-compat.ts)가, 백업 범위는
+[`src/host.ts`](src/host.ts)가 담당한다.
 
-S3 동기화는 에이전트별이고 디스크의 에이전트 디렉터리에서 유도되므로, 새 에이전트를
-추가해도 코드를 고칠 필요가 없다. 프로바이더 auth 저장소는 그 디렉터리 옆에 있고
-**절대** 업로드되지 않는다. `BACKUP_ENABLED=false`면 완전히 머신 로컬로 돈다.
+## 설정하기
 
-> OpenClaw 2026.8.1부터 대화 기록이 에이전트별 SQLite로 들어가는데 그 파일이
-> OAuth 저장소도 함께 담는다. 즉 파일 단위 세션 동기화는 자격증명을 같이 올리지
-> 않고는 불가능해진다. 호스트는 그 버전에서 세션 프리픽스를 제외하고 부팅 때 그
-> 사실을 알린다. 대신 `openclaw backup sqlite`를 써라. 자세한 건
-> [`docs/versions.md`](docs/versions.md).
+`.env`를 채운다. 모든 설정이 거기 있고, `run.sh`와 `docker-compose.yml`이 읽는
+경로도 같은 파일에서 온다. 그래서 둘이 상태 위치를 다르게 알 일이 없다.
 
-## 대안
+```bash
+DATA_BUCKET=my-bucket          # 또는 BACKUP_ENABLED=false 로 머신 로컬만
+USER_ID=me
+TELEGRAM_BOT_TOKEN=…
+AI_PROVIDER=openai             # anthropic | bedrock | deepseek | openai | 커스텀
+AI_AUTH=oauth                  # key | oauth | aws-sdk
+HOST_WORKSPACE=/srv/oc/workspace   # 기본값 $HOME/openclaw-workspace
+```
 
-OpenClaw는 자체 서비스 설치 명령과 공식 컨테이너를 제공한다. **대부분은 그쪽을
-써야 한다.** 이 표는 본인이 그 "대부분"인지 빨리 판단하라고 있는 것이다.
+그리고 `bash run.sh`. 이미지를 빌드하고, 마지막 백업이 끝나도록 150초 유예를 주며
+옛 컨테이너를 멈추고, 새 것을 띄운다. [`docker-compose.yml`](docker-compose.yml)이
+같은 일을 선언형으로 하고, Docker 없이 돌릴 systemd 유닛은 [`deploy/`](deploy/)에
+있다.
 
-| | 무엇인가 | 이걸 골라야 할 때 |
+에이전트는 명령을 컨테이너 안에서 실행한다. 마운트된 호스트 디렉터리 아래는
+마음대로 고치지만 호스트의 서비스, 패키지, Docker에는 닿지 못한다. 그걸 열어주는
+선택(privileged, `--pid=host`, docker 소켓)은 컨테이너를 박스의 root로 만든다.
+하기 전에 결정해라.
+
+### 에이전트 하나 더
+
+```bash
+openclaw agents add work --workspace /data/workspace-work
+openclaw agents bind --agent work --bind discord
+```
+
+먼저 `.env`에 `HOST_WORKSPACE_WORK`를 넣어라. 이미지 안에서 `/data`는 root
+소유라, 바인드 마운트 없는 워크스페이스를 받은 에이전트는 쓰지도 못하고
+컨테이너와 함께 죽는다. 바인딩도 게이트웨이를 재시작해야 먹는다. 두 함정과 거기
+쓴 시간은 [`docs/troubleshooting.md`](docs/troubleshooting.md)에 있다.
+
+### 모델 고르기
+
+`AI_PROVIDER=openai` + `AI_AUTH=oauth`면 토큰당 API 과금 대신 ChatGPT 구독으로
+OpenClaw 내장 Codex app-server를 통해 턴을 돌린다.
+
+```bash
+openclaw models auth login --provider openai --device-code
+```
+
+자격증명은 에이전트별 auth 저장소에 남는다. `openclaw.json`에도 S3에도 가지 않는다.
+
+> 한 프로바이더에 프로필이 둘인데 순서를 안 정하면 OpenClaw가 라운드로빈 한다.
+> 할당량이 소진된 쪽까지 포함해서. 고정해라:
+> `openclaw models auth order set --agent <id> --provider openai <profile…>`
+
+### 에이전트에게 도구 주기
+
+| | 방법 | 알아둘 것 |
 |---|---|---|
-| `openclaw daemon install` | 내장 systemd / launchd / schtasks 서비스 | 한 번 대화형으로 설정하면 그 상태로 쭉 간다. **여기서 시작해라.** |
-| 공식 Docker 이미지 | 업스트림 컨테이너 + compose | 컨테이너는 원하지만 대화형 온보딩은 괜찮다 |
-| Railway 템플릿, Coolify, Elest.io | 웹 마법사가 붙은 원클릭 PaaS | 머신을 직접 소유하고 싶지 않다 |
-| **openclaw-host** | 같은 게이트웨이를 env 기반으로 감싼 컨테이너 | 설정이 env로부터 재현돼야 하고, 에이전트 여럿이 각자 자격증명을 써야 하고, OpenClaw 버전을 오가게 된다 |
-| `serverless-openclaw` | AWS Lambda + API Gateway | 상시 가동 머신 자체를 두고 싶지 않다 |
+| **스킬** | `install-skill add <owner/repo>` | 영속 `/skills` 볼륨에 설치된다. 재빌드 없음. `.claude-plugin/plugin.json`이 필요하다. |
+| **원격 MCP** | `openclaw mcp add <name> --transport streamable-http --url <url>` | 로컬에 띄울 게 없다. |
+| **자체 호스팅 MCP** | [`run-mcp-sidecar.sh`](run-mcp-sidecar.sh) | 에이전트 컨테이너엔 Node 말고 아무것도 없다. 서버는 `oc-net` 네트워크의 사이드카로 돌고 컨테이너 이름으로 답한다. 동작하는 예시는 [`examples/mcp-sidecars/`](examples/mcp-sidecars/). |
+| **웹 검색** | `SEARXNG_BASE_URL=http://searxng:8080` | 내장 `web_search` 도구의 백엔드다. `settings.yml`에 `search.formats: [html, json]`을 켜지 않으면 검색이 전부 실패한다. |
+| **브라우저** | `BROWSER_URL=…` + `BROWSER_PASSWORD` | JS 렌더링 페이지, 스크린샷, 사람이 지켜볼 수 있는 뷰어. 프로필이 named volume에 남아서 사이트에 한 번 로그인하면 에이전트가 그 세션을 재사용한다. 비밀번호를 넘기는 것보다 낫다. `/exec`는 `oc-net`에서 임의 코드를 실행하니 뷰어는 게이트 뒤에 둬라. |
 
-내장 서비스 대비 얻는 것과 포기하는 것:
+## OpenClaw 올리기
+
+`.env`의 `OPENCLAW_VERSION`을 바꾸고 리빌드, 재시작. 호스트가 발견한 버전에
+맞춰 `openclaw.json`을 다시 쓰고 바꾼 내용을 전부 로그에 남긴다. 2026.9로
+넘어갈 땐 Node 베이스 이미지도 새로 해야 한다. OpenClaw가 이제 Node 22에서
+설치를 거부하기 때문이다.
+
+[`docs/versions.md`](docs/versions.md)에 릴리스 사이에 뭐가 움직였는지, 어떤
+차이가 진짜고 어떤 둘이 진짜처럼 보이지만 아닌지 적어뒀다. CI가 그걸 증명한다.
+한 잡이 `openclaw@latest`를 설치하고, 2026.7 모양 픽스처를 호환 계층에 통과시킨
+뒤, 진짜 바이너리에게 결과를 검증시킨다. 업스트림이 또 모양을 바꾸면 네
+게이트웨이의 다음 부팅이 아니라 여기서 깨진다.
+
+세션 기록은 2026.8.1부터 에이전트별 SQLite로 들어갔다. 그 파일이 OAuth 저장소도
+함께 담아서, 파일 단위 세션 동기화는 refresh 자격증명을 S3로 밀게 된다. 호스트는
+그 버전에서 세션 프리픽스를 빼고, 부팅 때 그 사실을 알리고,
+`openclaw backup sqlite`를 가리킨다.
+
+## 다른 도구와 비교
+
+이 분야는 전반적으로 작다. 아래 프로젝트는 이것 포함 전부 주말 장난감보다 별이
+적다. 인기가 아니라 형태를 보라고 넣은 표다.
+
+| | 무엇인가 | 이걸 고를 때 |
+|---|---|---|
+| [`openclaw daemon install`](https://docs.openclaw.ai/cli/gateway) | OpenClaw 자체 systemd/launchd 설치 | 한 번 손으로 설정하고 그대로 둔다. **여기서 시작해라.** |
+| [공식 Docker 이미지](https://docs.openclaw.ai/install/docker) | 업스트림 컨테이너와 compose | 컨테이너는 원하고 대화형 마법사도 괜찮다 |
+| [Railway 템플릿](https://railway.com/deploy/openclaw-prev-clawdbot-moltbot-self-host), Coolify, Elest.io | 웹 마법사 붙은 원클릭 PaaS | 머신을 소유하고 싶지 않다 |
+| **openclaw-host** | 같은 게이트웨이를 env 기반으로 감싼 컨테이너 | 설정이 재현돼야 하고, 에이전트 여럿이 각자 자격증명을 쓰고, OpenClaw 버전을 오갈 예정이다 |
+| [AgentDock](https://github.com/yuklcool/agentdock) | 아무 에이전트나 24/7 돌리는 플랫폼. 샌드박스, 스케줄링, 라이브 스트리밍, 교체 가능한 두뇌 | UI 달린 제품을 원하고 OpenClaw에 묶이지 않았다 |
+| [AgentOS Docker](https://github.com/thaqiif/agentos-docker) | Claude Code, Codex, OpenCode용 모바일 우선 웹 UI | 폰에서 코딩 에이전트를 몬다 |
+| [virtual-engineer](https://github.com/savoirfairelinux/virtual-engineer) | 격리 컨테이너에서 티켓 기반 코딩과 리뷰 | 워크플로가 티켓 큐에서 시작한다 |
+| `serverless-openclaw` | AWS Lambda + API Gateway | 상시 가동 머신을 두고 싶지 않다 |
+
+내장 서비스와 직접 비교하면:
 
 | | `daemon` / 공식 Docker | openclaw-host |
 |---|---|---|
 | 상시 가동, 죽으면 재시작 | 됨 | 됨 |
-| 대화형 온보딩 | 한 번 필요 | 없음 — `openclaw.json`이 env의 함수이고 매 부팅 재작성 |
-| 버전 상향·롤백 | `doctor --fix`가 프롬프트를 띄우고, `--non-interactive`는 **하필 컨테이너가 답할 수 없는 설정 모양 마이그레이션을 건너뛴다** | 설치된 버전에 맞춰 양방향 생성 — [`docs/versions.md`](docs/versions.md) |
-| 에이전트별 자격증명 | 모델 auth는 에이전트별, git·GitHub은 아님 | git 토큰이 작업 디렉터리로 라우팅돼 남의 것을 요청해도 못 얻음 |
-| 머신 밖 상태 보관 | `openclaw backup` — git 레포·SQLite 스냅샷 | 그것 + `serverless-openclaw` 배포와 공유 가능한 S3 미러 |
-| 검색·브라우저 사이드카 | 직접 배선 | 선언돼 있고 실패 양상까지 문서화 |
-| 공식 지원 | 있음 | **없음** — 개인 홈서버 산출물, MIT, 무보증 |
+| 대화형 온보딩 | 한 번 필요 | 없음. `openclaw.json`이 매 부팅 env에서 나온다 |
+| 버전 상향, 롤백 | `doctor --fix`가 묻고, `--non-interactive`는 컨테이너가 답할 수 없는 설정 마이그레이션을 건너뛴다 | 설치된 버전에 맞춰 양방향으로 작성 |
+| 에이전트별 자격증명 | 모델 auth는 에이전트별, git과 GitHub은 공유 | git 토큰이 작업 디렉터리로 라우팅된다 |
+| 머신 밖 상태 | `openclaw backup`: git 레포, SQLite 스냅샷 | 그것에 더해 `serverless-openclaw` 배포와 공유 가능한 S3 미러 |
+| 검색, 브라우저 사이드카 | 직접 배선 | 선언돼 있고 실패 양상까지 적혀 있다 |
+| 공식 지원 | 있음 | 없음. 개인 홈서버 산출물, MIT, 무보증 |
 
-**`openclaw daemon install`로 충분하면 이 레포를 쓰지 마라.** 그게 지원되는
-경로이고 너와 업스트림 사이에 낀 게 더 적다. 여기 있을 이유는 하나다 — 설정이
-"한 번 고쳐놓은 파일"이 아니라 **환경의 산출물**이었으면 하고, 버전 상향이
-반나절이 아니라 리빌드 한 번이었으면 할 때.
+## 상태
 
-## 범위
-
-**이것이다:** 설정 생성, 버전 호환, 에이전트별 자격증명 격리, 선택적 S3 상태
-동기화를 갖춘 OpenClaw 프로세스 감독자.
-
-**이것이 아니다:** 서버리스 스택. API Gateway도 Lambda도 DynamoDB도 없다.
-
-[`src/s3-contract.ts`](src/s3-contract.ts)의 S3 레이아웃은 같은 버킷을 쓰는
-`serverless-openclaw` 배포와 호환되도록 의도적으로 맞춰져 있다 —
-`workspaces/{userId}/…`, `sessions/{userId}/agents/{agentId}/sessions/…`.
-그런 배포와 버킷을 공유하지 않는다면 이 제약은 아무 비용도 아니다. 네
-`DATA_BUCKET`을 쓰거나 백업을 아예 끄면 된다.
+홈서버에서 실운영 중이다. Telegram과 Discord, 격리된 에이전트 3개, 테스트 111개,
+CI 그린. 설계는 [`docs/spec.md`](docs/spec.md)에 있다. 내 시간을 실제로 잡아먹은
+실패들은, 변경 감지 없는 백업이 만든 하루 $20 S3 청구서를 포함해
+[`docs/troubleshooting.md`](docs/troubleshooting.md)에 있다.
 
 ## 라이선스
 
-MIT — [`LICENSE`](LICENSE) 참고.
+MIT. [`LICENSE`](LICENSE) 참고.
