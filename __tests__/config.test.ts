@@ -365,3 +365,68 @@ describe("discord channel (opt-in second channel)", () => {
     expect(() => loadConfig({ ...base, DISCORD_BOT_TOKEN: "d" })).toThrow(/DISCORD_ALLOW_FROM/);
   });
 });
+
+describe("first-run friction", () => {
+  const base = { USER_ID: "u1", TELEGRAM_BOT_TOKEN: "t" };
+
+  it("does not demand a bucket when nothing will touch S3", () => {
+    // The README offers BACKUP_ENABLED=false as the machine-local path. Demanding
+    // a bucket name anyway makes that offer a lie, and it is the first thing a
+    // new reader hits.
+    const cfg = loadConfig({ ...base, BACKUP_ENABLED: "false", RESTORE_ON_START: "false" });
+    expect(cfg.backupEnabled).toBe(false);
+    expect(cfg.dataBucket).toBe("");
+  });
+
+  it("still demands a bucket when backups are on", () => {
+    expect(() => loadConfig({ ...base, RESTORE_ON_START: "false" })).toThrow(/DATA_BUCKET/);
+  });
+
+  it("still demands a bucket when only the startup restore is on", () => {
+    expect(() => loadConfig({ ...base, BACKUP_ENABLED: "false" })).toThrow(/DATA_BUCKET/);
+  });
+
+  it("runs on Discord alone, with no Telegram token", () => {
+    const cfg = loadConfig({
+      USER_ID: "u1",
+      BACKUP_ENABLED: "false",
+      RESTORE_ON_START: "false",
+      DISCORD_BOT_TOKEN: "d",
+      DISCORD_DM_POLICY: "disabled",
+    });
+    expect(cfg.telegram.enabled).toBe(false);
+    expect(cfg.discord?.enabled).toBe(true);
+  });
+
+  it("leaves telegram out of the emitted config when it has no token", () => {
+    const cfg = loadConfig({
+      USER_ID: "u1",
+      BACKUP_ENABLED: "false",
+      RESTORE_ON_START: "false",
+      DISCORD_BOT_TOKEN: "d",
+      DISCORD_DM_POLICY: "disabled",
+    });
+    const out = buildOpenclawConfig(cfg);
+    expect((out.channels as any).telegram.enabled).toBe(false);
+  });
+
+  it("refuses a gateway with no way in", () => {
+    expect(() =>
+      loadConfig({ USER_ID: "u1", BACKUP_ENABLED: "false", RESTORE_ON_START: "false" }),
+    ).toThrow(/TELEGRAM_BOT_TOKEN or DISCORD_BOT_TOKEN/);
+  });
+
+  it("ignores an empty telegram allowlist when telegram is off", () => {
+    // The allowlist check only protects a channel that will actually run.
+    expect(() =>
+      loadConfig({
+        USER_ID: "u1",
+        BACKUP_ENABLED: "false",
+        RESTORE_ON_START: "false",
+        DISCORD_BOT_TOKEN: "d",
+        DISCORD_DM_POLICY: "disabled",
+        TELEGRAM_DM_POLICY: "allowlist",
+      }),
+    ).not.toThrow();
+  });
+});

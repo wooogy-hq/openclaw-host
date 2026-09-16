@@ -192,10 +192,24 @@ function loadDiscordConfig(env: Env): DiscordConfig | undefined {
 }
 
 export function loadConfig(env: Env = process.env): HostConfig {
-  const dataBucket = required(env, "DATA_BUCKET");
   const userId = required(env, "USER_ID");
-  // v1 channel is Telegram; the token is required (delivered via env).
-  required(env, "TELEGRAM_BOT_TOKEN");
+  const restoreOnStart = booleanEnv(env, "RESTORE_ON_START", true);
+  const backupEnabled = booleanEnv(env, "BACKUP_ENABLED", true);
+
+  // Only demanded when something will actually talk to S3. Asking a machine-local
+  // install to invent a bucket name is the kind of first-run friction that ends
+  // with the reader closing the tab.
+  const dataBucket =
+    backupEnabled || restoreOnStart ? required(env, "DATA_BUCKET") : (env.DATA_BUCKET ?? "");
+
+  // A gateway with no channel can still be reached, but nobody can reach it by
+  // chat, which is the whole point of running one. Either token satisfies this.
+  const telegramEnabled = Boolean(env.TELEGRAM_BOT_TOKEN);
+  if (!telegramEnabled && !env.DISCORD_BOT_TOKEN) {
+    throw new Error(
+      "Set TELEGRAM_BOT_TOKEN or DISCORD_BOT_TOKEN — a gateway with no channel has no way in",
+    );
+  }
 
   const dmPolicy = (env.TELEGRAM_DM_POLICY ?? "pairing") as DmPolicy;
   if (!VALID_DM_POLICIES.includes(dmPolicy)) {
@@ -210,7 +224,7 @@ export function loadConfig(env: Env = process.env): HostConfig {
     .filter(Boolean);
 
   // Mirror OpenClaw: allowlist with no IDs blocks everything and is rejected.
-  if (dmPolicy === "allowlist" && allowFrom.length === 0) {
+  if (telegramEnabled && dmPolicy === "allowlist" && allowFrom.length === 0) {
     throw new Error("TELEGRAM_DM_POLICY=allowlist requires a non-empty TELEGRAM_ALLOW_FROM");
   }
 
@@ -228,9 +242,9 @@ export function loadConfig(env: Env = process.env): HostConfig {
     // index.ts overrides this with a persisted token when the env var is unset.
     gatewayToken: env.OPENCLAW_GATEWAY_TOKEN ?? "",
     backupIntervalMs: env.BACKUP_INTERVAL_MS ? Number(env.BACKUP_INTERVAL_MS) : 120000,
-    restoreOnStart: booleanEnv(env, "RESTORE_ON_START", true),
-    backupEnabled: booleanEnv(env, "BACKUP_ENABLED", true),
-    telegram: { enabled: true, dmPolicy, allowFrom },
+    restoreOnStart,
+    backupEnabled,
+    telegram: { enabled: telegramEnabled, dmPolicy, allowFrom },
     ...(discord ? { discord } : {}),
     thinkingDefault: thinkingEnv(env),
     dynamicAgentDefaults: booleanEnv(env, "DYNAMIC_AGENT_DEFAULTS", false),
