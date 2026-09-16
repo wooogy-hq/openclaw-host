@@ -155,21 +155,49 @@ startup, and points you at `openclaw backup sqlite`.
 
 ## How it compares
 
-Most of the field is small. Every project below including this one has fewer
-stars than a weekend toy, so read the table for shape rather than popularity.
+### Where it came from
 
-| | What it is | Pick it when |
-|---|---|---|
-| [`openclaw daemon install`](https://docs.openclaw.ai/cli/gateway) | OpenClaw's own systemd/launchd installer | You set it up once by hand and leave it. **Start here.** |
-| [Official Docker image](https://docs.openclaw.ai/install/docker) | Upstream container and compose files | You want a container and the interactive wizard suits you |
-| [Railway template](https://railway.com/deploy/openclaw-prev-clawdbot-moltbot-self-host), Coolify, Elest.io | One-click PaaS with a web setup wizard | You would rather not own a machine |
-| **openclaw-host** | Env-driven container around the same gateway | Your config has to be reproducible, several agents need separate credentials, and you expect to move across OpenClaw versions |
-| [AgentDock](https://github.com/yuklcool/agentdock) | Platform for running any agent 24/7: sandboxes, scheduling, live streaming, pluggable brains | You want a product with a UI, and you are not committed to OpenClaw |
-| [AgentOS Docker](https://github.com/thaqiif/agentos-docker) | Mobile-first web UI for Claude Code, Codex and OpenCode | You drive coding agents from your phone |
-| [virtual-engineer](https://github.com/savoirfairelinux/virtual-engineer) | Ticket-driven coding and review in isolated containers | Your workflow starts from a ticket queue |
-| `serverless-openclaw` | AWS Lambda and API Gateway | You want no always-on machine |
+This is [`serverless-openclaw`](https://github.com/serithemage/serverless-openclaw)
+(★195) with the AWS taken out. That project runs the same agent on demand across
+Lambda, Fargate Spot, API Gateway, Cognito, DynamoDB, S3, CloudFront, CloudWatch
+and EventBridge, reaching about $0.01 a month by owning no idle capacity. It
+deploys with one `cdk deploy` and answers in 1.35 seconds cold.
 
-Against the built-in service specifically:
+I already had a home server sitting idle, so nine managed services bought me
+nothing. What I kept is the S3 layout in
+[`src/s3-contract.ts`](src/s3-contract.ts), byte for byte, so both can share a
+bucket and see each other's state. What I dropped is everything else: no Lambda,
+no API Gateway, no DynamoDB, no Cognito, no CDK, no React web UI. OpenClaw's own
+Telegram and Discord channels replace the UI, a container replaces the compute,
+and a 1500-line TypeScript service replaces the infrastructure.
+
+Pick serverless-openclaw when you have no machine and want the bill to round to
+zero. Pick this when you have a machine and want no cold start, no AWS console,
+and the agent's files on a disk you can `ls`.
+
+### Running OpenClaw
+
+| | Stars | Pick it when |
+|---|---:|---|
+| [`openclaw daemon install`](https://docs.openclaw.ai/cli/gateway) | - | You set it up once by hand and leave it. **Start here.** |
+| [Official Docker image](https://docs.openclaw.ai/install/docker) | - | You want a container and the interactive wizard suits you |
+| [Railway](https://railway.com/deploy/openclaw-prev-clawdbot-moltbot-self-host), Coolify, Elest.io | - | You would rather not own a machine |
+| [serverless-openclaw](https://github.com/serithemage/serverless-openclaw) | 195 | No machine, and idle cost has to be zero |
+| **openclaw-host** | - | Your config must be reproducible, several agents need separate credentials, and you expect to move across OpenClaw versions |
+
+### If you are not committed to OpenClaw
+
+Bigger projects solve the neighbouring problem. They run their own agent rather
+than hosting [OpenClaw](https://github.com/openclaw/openclaw) (★389k), so
+switching means leaving its channels, skills and MCP wiring behind.
+
+| | Stars | What it is |
+|---|---:|---|
+| [LobeHub](https://github.com/lobehub/lobehub) | 82.5k | Runs a roster of agents 7×24 with an operations UI |
+| [Agent Zero](https://github.com/agent0ai/agent-zero) | 19.2k | General agent framework you extend in Python |
+| [LangBot](https://github.com/langbot-app/LangBot) | 17.8k | IM bot platform with Discord and Telegram built in, plugins, RAG |
+
+### Against the built-in service
 
 | | `daemon` / official Docker | openclaw-host |
 |---|---|---|
@@ -177,7 +205,7 @@ Against the built-in service specifically:
 | Interactive onboarding | once, required | never. `openclaw.json` comes from env every boot |
 | Version bump or rollback | `doctor --fix` prompts, `--non-interactive` skips the config-shape migrations a container cannot answer | written for the installed version, both directions |
 | Per-agent credentials | model auth per agent, git and GitHub shared | git tokens routed by working directory |
-| State off the machine | `openclaw backup`: git repos, SQLite snapshots | that, plus S3 mirroring a `serverless-openclaw` deployment can share |
+| State off the machine | `openclaw backup`: git repos, SQLite snapshots | that, plus S3 mirroring serverless-openclaw can share |
 | Search and browser sidecars | wire them yourself | declared, with the failure modes written down |
 | Official support | yes | no. One person's home server, MIT, no warranty |
 

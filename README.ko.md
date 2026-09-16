@@ -148,21 +148,48 @@ openclaw models auth login --provider openai --device-code
 
 ## 다른 도구와 비교
 
-이 분야는 전반적으로 작다. 아래 프로젝트는 이것 포함 전부 주말 장난감보다 별이
-적다. 인기가 아니라 형태를 보라고 넣은 표다.
+### 어디서 나왔나
 
-| | 무엇인가 | 이걸 고를 때 |
-|---|---|---|
-| [`openclaw daemon install`](https://docs.openclaw.ai/cli/gateway) | OpenClaw 자체 systemd/launchd 설치 | 한 번 손으로 설정하고 그대로 둔다. **여기서 시작해라.** |
-| [공식 Docker 이미지](https://docs.openclaw.ai/install/docker) | 업스트림 컨테이너와 compose | 컨테이너는 원하고 대화형 마법사도 괜찮다 |
-| [Railway 템플릿](https://railway.com/deploy/openclaw-prev-clawdbot-moltbot-self-host), Coolify, Elest.io | 웹 마법사 붙은 원클릭 PaaS | 머신을 소유하고 싶지 않다 |
-| **openclaw-host** | 같은 게이트웨이를 env 기반으로 감싼 컨테이너 | 설정이 재현돼야 하고, 에이전트 여럿이 각자 자격증명을 쓰고, OpenClaw 버전을 오갈 예정이다 |
-| [AgentDock](https://github.com/yuklcool/agentdock) | 아무 에이전트나 24/7 돌리는 플랫폼. 샌드박스, 스케줄링, 라이브 스트리밍, 교체 가능한 두뇌 | UI 달린 제품을 원하고 OpenClaw에 묶이지 않았다 |
-| [AgentOS Docker](https://github.com/thaqiif/agentos-docker) | Claude Code, Codex, OpenCode용 모바일 우선 웹 UI | 폰에서 코딩 에이전트를 몬다 |
-| [virtual-engineer](https://github.com/savoirfairelinux/virtual-engineer) | 격리 컨테이너에서 티켓 기반 코딩과 리뷰 | 워크플로가 티켓 큐에서 시작한다 |
-| `serverless-openclaw` | AWS Lambda + API Gateway | 상시 가동 머신을 두고 싶지 않다 |
+이건 [`serverless-openclaw`](https://github.com/serithemage/serverless-openclaw)
+(★195)에서 AWS를 덜어낸 것이다. 그 프로젝트는 같은 에이전트를 Lambda, Fargate
+Spot, API Gateway, Cognito, DynamoDB, S3, CloudFront, CloudWatch, EventBridge에
+걸쳐 온디맨드로 돌린다. 유휴 용량을 소유하지 않아 월 $0.01 수준까지 내려가고,
+`cdk deploy` 한 번으로 배포되며 콜드 스타트가 1.35초다.
 
-내장 서비스와 직접 비교하면:
+나는 놀고 있는 홈서버가 이미 있었다. 관리형 서비스 아홉 개가 사줄 게 없었다는
+뜻이다. 남긴 건 [`src/s3-contract.ts`](src/s3-contract.ts)의 S3 레이아웃
+하나다. 바이트 단위로 같게 유지해서 둘이 버킷을 공유하고 서로의 상태를 본다.
+버린 건 나머지 전부다. Lambda 없고, API Gateway 없고, DynamoDB도 Cognito도 CDK도
+React 웹 UI도 없다. UI 자리는 OpenClaw 자체 Telegram·Discord 채널이, 컴퓨트
+자리는 컨테이너가, 인프라 자리는 1500줄짜리 TypeScript 서비스가 대신한다.
+
+머신이 없고 청구서를 0에 수렴시키고 싶으면 serverless-openclaw를 골라라. 머신이
+있고 콜드 스타트도 AWS 콘솔도 없이 에이전트 파일을 `ls`로 볼 수 있는 디스크에
+두고 싶으면 이걸 골라라.
+
+### OpenClaw 돌리는 방법들
+
+| | 별 | 이걸 고를 때 |
+|---|---:|---|
+| [`openclaw daemon install`](https://docs.openclaw.ai/cli/gateway) | - | 한 번 손으로 설정하고 그대로 둔다. **여기서 시작해라.** |
+| [공식 Docker 이미지](https://docs.openclaw.ai/install/docker) | - | 컨테이너는 원하고 대화형 마법사도 괜찮다 |
+| [Railway](https://railway.com/deploy/openclaw-prev-clawdbot-moltbot-self-host), Coolify, Elest.io | - | 머신을 소유하고 싶지 않다 |
+| [serverless-openclaw](https://github.com/serithemage/serverless-openclaw) | 195 | 머신이 없고 유휴 비용이 0이어야 한다 |
+| **openclaw-host** | - | 설정이 재현돼야 하고, 에이전트 여럿이 각자 자격증명을 쓰고, OpenClaw 버전을 오갈 예정이다 |
+
+### OpenClaw에 묶이지 않았다면
+
+더 큰 프로젝트들이 옆 문제를 푼다. 다만 [OpenClaw](https://github.com/openclaw/openclaw)
+(★389k)를 호스팅하는 게 아니라 자기 에이전트를 돌린다. 갈아타면 OpenClaw의 채널,
+스킬, MCP 배선을 두고 가야 한다.
+
+| | 별 | 무엇인가 |
+|---|---:|---|
+| [LobeHub](https://github.com/lobehub/lobehub) | 82.5k | 에이전트 여럿을 7×24로 운영, 운영 UI 제공 |
+| [Agent Zero](https://github.com/agent0ai/agent-zero) | 19.2k | 파이썬으로 확장하는 범용 에이전트 프레임워크 |
+| [LangBot](https://github.com/langbot-app/LangBot) | 17.8k | Discord·Telegram 내장 IM 봇 플랫폼, 플러그인, RAG |
+
+### 내장 서비스와 직접 비교
 
 | | `daemon` / 공식 Docker | openclaw-host |
 |---|---|---|
@@ -170,7 +197,7 @@ openclaw models auth login --provider openai --device-code
 | 대화형 온보딩 | 한 번 필요 | 없음. `openclaw.json`이 매 부팅 env에서 나온다 |
 | 버전 상향, 롤백 | `doctor --fix`가 묻고, `--non-interactive`는 컨테이너가 답할 수 없는 설정 마이그레이션을 건너뛴다 | 설치된 버전에 맞춰 양방향으로 작성 |
 | 에이전트별 자격증명 | 모델 auth는 에이전트별, git과 GitHub은 공유 | git 토큰이 작업 디렉터리로 라우팅된다 |
-| 머신 밖 상태 | `openclaw backup`: git 레포, SQLite 스냅샷 | 그것에 더해 `serverless-openclaw` 배포와 공유 가능한 S3 미러 |
+| 머신 밖 상태 | `openclaw backup`: git 레포, SQLite 스냅샷 | 그것에 더해 serverless-openclaw와 공유 가능한 S3 미러 |
 | 검색, 브라우저 사이드카 | 직접 배선 | 선언돼 있고 실패 양상까지 적혀 있다 |
 | 공식 지원 | 있음 | 없음. 개인 홈서버 산출물, MIT, 무보증 |
 
