@@ -36,7 +36,17 @@ RUN npm install -g openclaw@${OPENCLAW_VERSION} && npm cache clean --force
 #   claude (default): @anthropic-ai/claude-code  (CLAUDE_CODE_OAUTH_TOKEN | ANTHROPIC_API_KEY)
 #   codex           : @openai/codex              (OPENAI_API_KEY / OpenClaw OAuth profile)
 # Both are installed so swapping backends is purely a CODING_AGENT env change.
-RUN npm install -g @anthropic-ai/claude-code @openai/codex && npm cache clean --force
+#
+# Pinned, like OPENCLAW_VERSION and AGENT_SKILLS_REF: unpinned, two builds of the
+# same commit ship different agent behaviour and the diff shows nothing. That
+# matters most for codex, which owns the sandbox and approval behaviour every
+# agent shell command goes through. run.sh forwards both from .env.
+ARG CLAUDE_CODE_VERSION=2.1.280
+ARG CODEX_VERSION=0.145.0
+RUN npm install -g \
+      @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+      @openai/codex@${CODEX_VERSION} \
+    && npm cache clean --force
 COPY bin/code-agent /usr/local/bin/code-agent
 RUN chmod +x /usr/local/bin/code-agent
 
