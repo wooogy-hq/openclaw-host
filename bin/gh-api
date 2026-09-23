@@ -22,7 +22,10 @@ case "$PWD/" in
 esac
 [ -n "$tok" ] || { echo "gh-api: no token for the $who scope" >&2; exit 1; }
 
-exec curl -sS \
+# -f: without it curl exits 0 on 401/403/404 and the caller reads an error body
+# as data. That turned an expired token into "dispatched" in a publish log for
+# three days. --retry covers GitHub's transient 5xx, not auth failures.
+exec curl -sS -f --retry 2 --retry-connrefused \
   -H "Authorization: Bearer $tok" \
   -H "Accept: application/vnd.github+json" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
