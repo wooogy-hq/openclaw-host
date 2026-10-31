@@ -354,3 +354,53 @@ Result: ~4.5M → ~660k → near-zero requests/day.
 agent's workspace grows unattended, in a direction you did not choose, between
 one backup cycle and the next. Whatever you sync, exclude the reconstructible
 parts before the agent has a chance to fill them.
+
+## After a power cut the host never came back
+
+**Symptom:** power returns, the box is on, and nothing answers: no SSH, no
+agent, no k8s. The console sits on `A start job is running for Wait for
+Network to be Configured (… / no limit)`.
+
+**Cause, in order:**
+
+1. **cloud-init emptied the network config.** Ubuntu Server's installer leaves
+   `network: {ethernets: {}}` in `/etc/cloud/cloud.cfg.d/90-installer-network.cfg`.
+   On some boots cloud-init decides it is a new instance and renders that into
+   netplan, deleting the hand-edited `50-cloud-init.yaml`. The NIC is never
+   brought up. `grep "Applying network configuration" /var/log/cloud-init.log`
+   shows the boot it happened on.
+2. **wait-online had no timeout**, so boot stopped there forever instead of
+   continuing without network.
+3. **The public IP changed.** A box plugged straight into the ISP's line gets
+   its address by DHCP, and a long outage hands back a new one.
+4. **Containers that did start had no DNS.** Docker's embedded resolver and
+   Flux's source-controller came up while the host had no upstream and kept that
+   view after the network returned. `docker restart` and a Flux controller
+   rollout fixed them; Telegram and Discord reconnected on their own and drained
+   their queued deliveries.
+
+**Fix:**
+
+```yaml
+# /etc/netplan/01-<nic>.yaml  (chmod 600)
+network:
+  version: 2
+  ethernets:
+    <nic>:
+      dhcp4: true
+      optional: true          # no link must not block boot
+```
+
+```bash
+echo "network: {config: disabled}" | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+sudo mkdir -p /etc/systemd/system/systemd-networkd-wait-online.service.d
+printf '[Service]\nExecStart=\nExecStart=/lib/systemd/systemd-networkd-wait-online --any --timeout=30\n' |
+  sudo tee /etc/systemd/system/systemd-networkd-wait-online.service.d/timeout.conf
+```
+
+Point SSH at a DDNS name rather than an IP. Behind Cloudflare that record must be
+DNS-only: the proxy carries HTTP, not SSH on a custom port.
+
+**To get in while it is stuck:** at GRUB press `e`, append
+`systemd.mask=systemd-networkd-wait-online.service` to the `linux` line, boot,
+then `sudo ip link set <nic> up && sudo dhclient <nic>`.
