@@ -293,7 +293,8 @@ Both are required. Measured on this host, running the vendored bwrap as uid 1000
   escape hatch, and it does work in a plain Codex CLI — but OpenClaw narrows the value back
   (openclaw/openclaw#83018), so the setting has no effect here.
 - **`plugins.entries.codex.config.appServer.sandbox`**. The key exists in OpenClaw's schema and
-  `config set` accepts it, but on 2026.7.1-2 it changes nothing, same upstream cause.
+  `config set` accepts it, but on 2026.7.1-2 it changes nothing while `tools.exec.mode` is not
+  `full`; see "Agent can't reach GitHub" below for what actually picks the sandbox.
 - **`tools.exec.host` / `agents.defaults.sandbox.mode`**. These govern OpenClaw's *own* sandbox,
   which defaults to `off` and was never the thing wrapping the command.
 - **setuid on bwrap** (`chmod u+s`), the fix most often suggested online. The bwrap Codex ships is
@@ -310,6 +311,38 @@ Discord channel lets anyone in the server put text in front of the agent. Revisi
 openclaw/openclaw#83018 lands: disabling the inner sandbox properly would let both flags go.
 
 ---
+
+## Agent can't reach GitHub: `Could not resolve host` inside the shell tool
+
+The container resolves `github.com` fine; only commands the Codex shell runs fail. The run's
+`turn_context` (in `agents/<id>/agent/codex-home/sessions/**/rollout-*.jsonl`) shows
+`workspace-write` with `network_access: false`, even though `openclaw.json` says
+`appServer.sandbox = "danger-full-access"`. Escalation requests then go to a model reviewer
+(`codex-auto-review`), which rejects them, and the agent may invent a "GitHub plugin" to approve.
+
+Cause (2026.7.1-2, `config-*.js`): the exec policy decides the sandbox, not `appServer.sandbox`.
+Any `tools.exec.mode` other than `full` forces Codex into guardian mode and `workspace-write`.
+Two layers feed it, and the stricter one wins:
+
+1. `openclaw.json` `tools.exec.mode` (global `"auto"` here), overridable per agent at
+   `agents.list[].tools.exec.mode`.
+2. `exec-approvals.json` acts as a floor: its `defaults` (`allowlist` / `on-miss`) tighten a
+   per-agent `full` back down unless the file has its own entry for that agent.
+
+Fix, per agent (here `work`). No restart needed for the second; the first is read at turn start:
+
+```
+openclaw.json        agents.list[id=work].tools = {"exec": {"mode": "full"}}
+exec-approvals.json  agents.work = {"security": "full", "ask": "off"}
+```
+
+Check: a new turn's `turn_context` shows `{'type': 'danger-full-access'}`, and
+`git ls-remote` from the agent returns a ref.
+
+Cost: this turns off Codex's per-command sandbox for that agent, the layer the previous section
+calls the defence against Discord prompt injection. The agent can then write anywhere uid 1000 can
+inside the container (`/state` included) and reach any host. Do it only for an agent whose channel
+is limited to people you trust; leave the global mode `auto` so the others stay sandboxed.
 
 ---
 
