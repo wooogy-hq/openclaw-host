@@ -109,12 +109,12 @@ echo "snapshot: $snap"
 du -sh "$snap" "$DEST"
 
 # Off the machine. Backs up the snapshot just taken, not the live dirs, so the
-# remote copy has the same consistent SQLite files. The `latest` symlink keeps
-# restic's paths stable across runs, which is what lets it dedupe.
+# remote copy has the same consistent SQLite files. The path changes every run;
+# restic dedupes by content, so only new chunks upload. (Not via a `latest`
+# symlink: restic stores the link itself, and the first run here uploaded 0 B.)
 if [ -n "${RESTIC_REPOSITORY:-}" ]; then
-  ln -sfn "$snap" "$DEST/latest"
-  "$RESTIC" backup --quiet --host "$(hostname)" --tag nas "$DEST/latest/"
-  echo "offsite: $("$RESTIC" snapshots --latest 1 --compact | tail -n +3 | head -1)"
+  "$RESTIC" backup --quiet --host "$(hostname)" --tag nas "$snap"
+  echo "offsite: $("$RESTIC" snapshots --latest 1 --path "$snap" --compact | tail -n +3 | head -1)"
 else
   echo "offsite: not configured (no RESTIC_REPOSITORY) — this copy dies with the disk" >&2
 fi
