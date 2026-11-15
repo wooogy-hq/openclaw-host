@@ -58,7 +58,9 @@ docker network create oc-net 2>/dev/null || true
 docker stop -t 150 openclaw-host 2>/dev/null || true
 docker rm openclaw-host 2>/dev/null || true
 
-docker run -d --name openclaw-host --restart unless-stopped \
+# --init: the gateway runs as PID 1 and never reaps orphans, so every exited
+# grandchild (Codex tool runners, MCP servers) stayed a zombie: 5,000 in 14 days.
+docker run -d --name openclaw-host --restart unless-stopped --init \
   --user "$HOST_UID:$HOST_GID" \
   --security-opt seccomp=unconfined --security-opt apparmor=unconfined \
   --env-file .env \
